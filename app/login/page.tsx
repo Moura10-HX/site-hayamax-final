@@ -1,85 +1,128 @@
-import { login } from './actions'
-import Image from 'next/image' // &lt;--- Importante importar o componente Image
+"use client";
 
-export default function LoginPage({
-  searchParams,
-}: {
-  searchParams: { message: string }
-}) {
+import { useState } from "react";
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    // Simulação de login - AQUI VOCÊ CONECTARÁ O SUPABASE DEPOIS
+    setTimeout(() => {
+      setLoading(false);
+      router.push("/dashboard"); // Redireciona para o painel
+    }, 1500);
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
       
-      {/* Elementos decorativos de fundo */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl"></div>
+      {/* BACKGROUND FUTURISTA */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-950 to-slate-950"></div>
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute top-40 -left-20 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Card de Login */}
-      <div className="relative z-10 w-full max-w-md p-8 mx-4 glass-panel rounded-2xl shadow-2xl animate-fade-in">
+      {/* CARD DE LOGIN */}
+      <div className="relative z-10 w-full max-w-md bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
         
-        {/* LOGO DA HAYAMAX AQUI */}
-        <div className="flex flex-col items-center justify-center mb-8">
-          <div className="relative w-64 h-24 mb-2"> {/* Ajuste w-48 e h-16 conforme o tamanho da sua logo */}
-            <Image 
-              src="/logo-hayamax.svg"
-              alt="Hayamax Digital" 
-              fill 
-              className="object-contain"
-              priority
-            />
-          </div>
-          {/* Fallback caso a imagem não carregue ou para acessibilidade */}
-          <p className="sr-only">Hayamax Digital</p> 
-          <p className="mt-2 text-sm text-slate-600 font-medium">
-            Portal do Parceiro Óptico
-          </p>
-        </div>
+        {/* Barra Superior Decorativa */}
+        <div className="h-2 w-full bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600"></div>
 
-        <form className="space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 ml-1">Email Corporativo</label>
-              <input
-                name="email"
-                type="email"
-                required
-                className="block w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
-                placeholder="ex: otica@parceiro.com"
-              />
+        <div className="p-8 md:p-10">
+          
+          {/* CABEÇALHO */}
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-700 mb-6 shadow-lg shadow-blue-900/50">
+              <ShieldCheck className="w-8 h-8 text-white" />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 ml-1">Senha de Acesso</label>
-              <input
-                name="password"
-                type="password"
-                required
-                className="block w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
-                placeholder="••••••••"
-              />
-            </div>
+            <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Hayamax Digital</h1>
+            <p className="text-slate-400 text-sm">Acesso exclusivo para parceiros ópticos</p>
           </div>
 
-          {searchParams?.message && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm text-center font-medium">
-              {searchParams.message}
+          {/* FORMULÁRIO */}
+          <form onSubmit={handleLogin} className="space-y-6">
+            
+            {/* EMAIL */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider ml-1">E-mail Corporativo</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                </div>
+                <input 
+                  type="email" 
+                  placeholder="seu@email.com" 
+                  className="w-full bg-slate-950/50 border border-slate-700 text-slate-100 rounded-xl py-3.5 pl-12 pr-4 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                  required
+                />
+              </div>
             </div>
-          )}
 
-          <button
-            formAction={login}
-            className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-900 to-blue-800 hover:from-blue-800 hover:to-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-900/30 transform transition hover:-translate-y-0.5 focus:ring-2 focus:ring-offset-2 focus:ring-blue-900"
-          >
-            ACESSAR SISTEMA
-          </button>
-        </form>
+            {/* SENHA */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider ml-1">Senha de Acesso</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                </div>
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="••••••••" 
+                  className="w-full bg-slate-950/50 border border-slate-700 text-slate-100 rounded-xl py-3.5 pl-12 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
 
-        <div className="mt-8 text-center">
-          <p className="text-xs text-slate-500">
-            Precisa de ajuda? <a href="#" className="text-blue-700 font-semibold hover:underline">Contate o suporte</a>
-          </p>
+            {/* BOTÃO LOGIN */}
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-900/30 transition-all transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
+            >
+              {loading ? (
+                <span className="animate-pulse">Acessando...</span>
+              ) : (
+                <>
+                  Acessar Painel
+                  <ArrowRight className="w-5 h-5" />
+                </>
+              )}
+            </button>
+
+          </form>
+
+          {/* RODAPÉ DO CARD */}
+          <div className="mt-8 text-center">
+            <Link href="/" className="text-sm text-slate-500 hover:text-blue-400 transition-colors">
+              ← Voltar para o site
+            </Link>
+          </div>
+
         </div>
       </div>
+      
+      {/* Footerzinho */}
+      <div className="absolute bottom-6 text-slate-600 text-xs">
+        &copy; 2024 Hayamax Lentes. Sistema Seguro.
+      </div>
+
     </div>
-  )
+  );
 }
