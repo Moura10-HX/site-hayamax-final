@@ -26,9 +26,9 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // 1. Protege o Dashboard -> Manda para /acesso
-  if (path.startsWith('/dashboard') && !user) {
-    return NextResponse.redirect(new URL('/acesso', request.url))
-  }
+  if (request.nextUrl.pathname === '/acesso' && user) {
+  return NextResponse.redirect(new URL('/dashboard', request.url))
+}
 
   // 2. Se já logado, tira do /acesso -> Manda para /dashboard
   if (path === '/acesso' && user) {

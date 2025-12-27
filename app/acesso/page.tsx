@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail, ArrowRight, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/utils/supabase/client"; // O conector que verificamos no passo 2
+import { createClient } from "../../utils/supabase/client";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
