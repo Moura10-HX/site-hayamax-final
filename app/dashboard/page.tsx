@@ -36,7 +36,7 @@ export default function Dashboard() {
       
       if (!user) {
         // Se não tem usuário, chuta para o login IMEDIATAMENTE
-        router.push("/login");
+        router.push("/acesso");
       } else {
         // Se tem usuário, libera o acesso
         setUser(user);

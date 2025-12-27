@@ -8,9 +8,8 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // --- SUAS CHAVES ---
-  const supabaseUrl = "https://pevafhjxkuvpjhusbhjk.supabase.co"
-  const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldmFmaGp4a3V2cGpodXNiaGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3Njg0ODksImV4cCI6MjA4MjM0NDQ4OX0.b9JN5EygTWxSYk7491Z5Fe5aQyrJWatGxxMBYnOE92k"
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
@@ -24,14 +23,15 @@ export async function middleware(request: NextRequest) {
   })
 
   const { data: { user } } = await supabase.auth.getUser()
+  const path = request.nextUrl.pathname
 
-  // REGRA 1: Se tentar acessar /dashboard SEM usuário -> Manda para /painel
-  if (request.nextUrl.pathname.startsWith('/dashboard') && !user) {
-    return NextResponse.redirect(new URL('/painel', request.url))
+  // 1. Protege o Dashboard -> Manda para /acesso
+  if (path.startsWith('/dashboard') && !user) {
+    return NextResponse.redirect(new URL('/acesso', request.url))
   }
 
-  // REGRA 2: Se já logado E tentar acessar /painel -> Manda para /dashboard
-  if (request.nextUrl.pathname === '/painel' && user) {
+  // 2. Se já logado, tira do /acesso -> Manda para /dashboard
+  if (path === '/acesso' && user) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
