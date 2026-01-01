@@ -133,3 +133,12 @@ export default function LoginPage() {
     </div>
   );
 }
+<button
+  type="button"
+  style={{ position: 'fixed', bottom: '20px', left: '20px', zIndex: 9999, backgroundColor: 'red', color: 'white', padding: '15px', borderRadius: '50px', fontWeight: 'bold' }}
+  onClick={() => {
+    throw new Error("Teste de Estabilidade Hayamax - Sentry OK!");
+  }}
+>
+  🚨 Testar Sentry
+</button>
