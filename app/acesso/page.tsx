@@ -75,39 +75,6 @@ export default function LoginPage() {
               <span>{error}</span>
             </div>
           )}
-          {/* BOTÃO DE TESTE SENTRY - VERSÃO ROBUSTA */}
-<button
-  type="button"
-  style={{ 
-    position: 'fixed', 
-    bottom: '20px', 
-    left: '20px', 
-    zIndex: 9999, 
-    backgroundColor: '#dc2626', 
-    color: 'white', 
-    padding: '16px 24px', 
-    borderRadius: '9999px', 
-    fontWeight: 'bold',
-    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-    cursor: 'pointer',
-    border: '2px solid white'
-  }}
-  onClick={() => {
-    console.log("Botão clicado! Tentando enviar erro...");
-    // Método oficial do Sentry para teste manual
-    // @ts-ignore
-    if (window.Sentry) {
-        // @ts-ignore
-        window.Sentry.captureException(new Error("ERRO MANUAL CONFIRMADO - HAYAMAX"));
-        alert("Erro enviado para o Sentry! Verifique o painel.");
-    } else {
-        // Fallback bruto
-        throw new Error("ERRO MANUAL BRUTO - HAYAMAX");
-    }
-  }}
->
-  🚨 DISPARAR ERRO
-</button>
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-300 uppercase ml-1">E-mail</label>
