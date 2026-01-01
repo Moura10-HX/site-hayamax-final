@@ -102,31 +102,37 @@ export async function createOrder(formData: FormData) {
   // O redirect deve ser a última coisa e fora do try/catch
   redirect('/dashboard')
 }
-// ... (mantenha o código anterior do createOrder)
+// ... (mantenha os imports e a função createOrder como estão)
 
-// Adicione esta nova função no final do arquivo
+// Substitua a função getDashboardData antiga por esta NOVA VERSÃO COMPLETA:
 export async function getDashboardData() {
   const supabase = await createClient()
   
-  // Pega o usuário atual
+  // 1. Verifica Usuário
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) {
+    // Retorna estrutura vazia para não quebrar a página
+    return { profile: null, orders: [] }
+  }
 
-  // Busca os pedidos desse usuário
-  const { data: orders, error } = await supabase
+  // 2. Busca o Perfil (Para mostrar Nome e Crédito)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  // 3. Busca os Pedidos (Para a tabela)
+  const { data: orders } = await supabase
     .from('orders')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .limit(10) // Pega os últimos 10
+    .limit(20)
 
-  if (error) {
-    console.error('Erro ao buscar dashboard:', error)
-    return { orders: [], total: 0 }
-  }
-
+  // Retorna exatamente o que a page.tsx espera: { profile, orders }
   return {
-    orders: orders || [],
-    total: orders?.length || 0
+    profile: profile || null,
+    orders: orders || []
   }
 }
