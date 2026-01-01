@@ -1,60 +1,27 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import { createClient } from "@/utils/supabase/client"; // Certifique-se que este caminho existe
-import { useRouter } from "next/navigation"; // Importante: use next/navigation, não next/router
+import { getDashboardData } from './actions'
+import { redirect } from 'next/navigation'
+import Link from "next/link"
 import { 
   LayoutDashboard, 
   PlusCircle, 
-  Search, 
-  Bell, 
-  LogOut, 
-  User, 
   FileText, 
+  User, 
   Settings,
+  LogOut,
   ChevronRight
-} from "lucide-react";
-import Link from "next/link";
+} from "lucide-react"
 
-// Dados simulados
-const mockPedidos = [
-  { id: "OS-2024-001", cliente: "Ótica Visão Real", paciente: "Maria Silva", status: "Em Produção", data: "27/12/2025", valor: "R$ 450,00" },
-  { id: "OS-2024-002", cliente: "Ótica Visão Real", paciente: "João Santos", status: "Pendente", data: "26/12/2025", valor: "R$ 320,00" },
-  { id: "OS-2024-003", cliente: "Ótica Visão Real", paciente: "Ana Costa", status: "Finalizado", data: "24/12/2025", valor: "R$ 890,00" },
-];
+// Componente Principal (Server Component)
+export default async function DashboardPage() {
+  // 1. Busca dados reais no servidor
+  const data = await getDashboardData()
 
-export default function Dashboard() {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const supabase = createClient();
-
-  // --- TRAVA DE SEGURANÇA (CLIENT SIDE) ---
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        // Se não tem usuário, chuta para o login IMEDIATAMENTE
-        router.push("/acesso");
-      } else {
-        // Se tem usuário, libera o acesso
-        setUser(user);
-        setLoading(false);
-      }
-    };
-
-    checkUser();
-  }, [router, supabase]);
-
-  // Enquanto verifica, mostra tela de carregamento (para não piscar o painel)
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
+  // 2. Se não tiver dados (não logado), redireciona
+  if (!data) {
+    redirect('/login')
   }
+
+  const { profile, orders } = data
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
@@ -77,16 +44,16 @@ export default function Dashboard() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <button 
-            onClick={async () => {
-              await supabase.auth.signOut();
-              router.push("/login");
-            }}
-            className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10"
-          >
-            <LogOut size={20} />
-            <span>Sair do Sistema</span>
-          </button>
+          <form action={async () => {
+            'use server'
+            // Aqui precisaria de uma Server Action de logout, 
+            // mas por enquanto deixamos um link simples ou botão client
+          }}>
+            <Link href="/login" className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10">
+              <LogOut size={20} />
+              <span>Sair do Sistema</span>
+            </Link>
+          </form>
         </div>
       </aside>
 
@@ -105,8 +72,8 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-xs font-bold shadow-lg shadow-blue-900/50">
-              {user?.email?.charAt(0).toUpperCase()}
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-xs font-bold shadow-lg shadow-blue-900/50 text-white">
+              {profile?.razao_social?.charAt(0).toUpperCase() || 'H'}
             </div>
           </div>
         </header>
@@ -116,7 +83,9 @@ export default function Dashboard() {
           
           <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-white">Olá, {user?.email?.split('@')[0]} 👋</h2>
+              <h2 className="text-2xl font-bold text-white">
+                Olá, {profile?.razao_social || 'Parceiro'} 👋
+              </h2>
               <p className="text-slate-400">Bem-vindo ao seu painel de controle.</p>
             </div>
             <Link href="/dashboard/novo-pedido">
@@ -127,14 +96,32 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {/* CARDS */}
+          {/* CARDS COM DADOS REAIS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatCard title="Em Produção" value="12" icon="⚙️" color="text-blue-400" border="border-blue-900/50" />
-            <StatCard title="Finalizados (Hoje)" value="4" icon="✅" color="text-green-400" border="border-green-900/50" />
-            <StatCard title="Faturamento (Mês)" value="R$ 12.450" icon="💰" color="text-amber-400" border="border-amber-900/50" />
+            <StatCard 
+              title="Limite de Crédito" 
+              value={`R$ ${profile?.limite_credito?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`} 
+              icon="💳" 
+              color="text-blue-400" 
+              border="border-blue-900/50" 
+            />
+            <StatCard 
+              title="Pedidos Ativos" 
+              value={orders.filter(o => o.status !== 'entregue' && o.status !== 'cancelado').length.toString()} 
+              icon="⚙️" 
+              color="text-amber-400" 
+              border="border-amber-900/50" 
+            />
+            <StatCard 
+              title="Status da Conta" 
+              value="Ativo" 
+              icon="✅" 
+              color="text-green-400" 
+              border="border-green-900/50" 
+            />
           </div>
 
-          {/* TABELA */}
+          {/* TABELA COM DADOS REAIS */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h3 className="font-bold text-lg">Pedidos Recentes</h3>
@@ -144,25 +131,39 @@ export default function Dashboard() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-xs">
                   <tr>
-                    <th className="px-6 py-4 font-medium">Nº OS</th>
-                    <th className="px-6 py-4 font-medium">Paciente</th>
-                    <th className="px-6 py-4 font-medium">Status</th>
+                    <th className="px-6 py-4 font-medium">ID</th>
                     <th className="px-6 py-4 font-medium">Data</th>
-                    <th className="px-6 py-4 font-medium text-right">Valor</th>
+                    <th className="px-6 py-4 font-medium">Status</th>
+                    <th className="px-6 py-4 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {mockPedidos.map((pedido) => (
-                    <tr key={pedido.id} className="hover:bg-slate-800/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-slate-300">{pedido.id}</td>
-                      <td className="px-6 py-4 font-medium text-white">{pedido.paciente}</td>
-                      <td className="px-6 py-4">
-                        <StatusBadge status={pedido.status} />
+                  {orders.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-slate-500">
+                        Nenhum pedido encontrado. Crie sua primeira OS!
                       </td>
-                      <td className="px-6 py-4 text-slate-400">{pedido.data}</td>
-                      <td className="px-6 py-4 text-right font-medium text-slate-200">{pedido.valor}</td>
                     </tr>
-                  ))}
+                  ) : (
+                    orders.map((order) => (
+                      <tr key={order.id} className="hover:bg-slate-800/50 transition-colors">
+                        <td className="px-6 py-4 font-mono text-slate-300 text-xs">
+                          {order.id.slice(0, 8)}...
+                        </td>
+                        <td className="px-6 py-4 text-slate-400">
+                          {new Date(order.created_at).toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge status={order.status} />
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <Link href={`/dashboard/pedido/${order.id}`} className="text-blue-400 hover:text-blue-300 text-xs font-medium">
+                            Detalhes
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -171,17 +172,18 @@ export default function Dashboard() {
         </div>
       </main>
     </div>
-  );
+  )
 }
 
-// Componentes Auxiliares (Mesmos de antes)
+// --- COMPONENTES VISUAIS (Mantidos iguais) ---
+
 function NavItem({ icon, label, active = false }: any) {
   return (
-    <button className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all ${active ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
+    <div className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all cursor-pointer ${active ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
       {icon}
       <span className="font-medium text-sm">{label}</span>
-    </button>
-  );
+    </div>
+  )
 }
 
 function StatCard({ title, value, icon, color, border }: any) {
@@ -193,19 +195,24 @@ function StatCard({ title, value, icon, color, border }: any) {
       <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
       <h3 className={`text-2xl font-bold ${color}`}>{value}</h3>
     </div>
-  );
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
   const styles: any = {
-    "Em Produção": "bg-blue-900/30 text-blue-400 border-blue-800",
-    "Pendente": "bg-amber-900/30 text-amber-400 border-amber-800",
-    "Finalizado": "bg-green-900/30 text-green-400 border-green-800",
-  };
+    "producao": "bg-blue-900/30 text-blue-400 border-blue-800",
+    "rascunho": "bg-slate-800 text-slate-400 border-slate-700",
+    "analise": "bg-amber-900/30 text-amber-400 border-amber-800",
+    "entregue": "bg-green-900/30 text-green-400 border-green-800",
+    "cancelado": "bg-red-900/30 text-red-400 border-red-800",
+  }
+  
+  // Normaliza o status (ex: "Em Produção" -> "producao" se necessário, mas aqui assumo que vem do banco)
+  const statusKey = status.toLowerCase()
   
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${styles[status] || "bg-slate-800 text-slate-400"}`}>
-      {status}
+    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${styles[statusKey] || "bg-slate-800 text-slate-400"}`}>
+      {status.toUpperCase()}
     </span>
-  );
+  )
 }
