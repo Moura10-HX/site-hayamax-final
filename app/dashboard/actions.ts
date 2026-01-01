@@ -3,18 +3,12 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 
-// Função auxiliar para limpar e converter números com segurança máxima
-// Aceita: "1.5", "1,5", "+1.50", "", null, undefined
-// Retorna: number ou null (se for campo opcional) ou 0 (se obrigatório)
+// ... (mantenha as funções parseDecimal e parseIntSafe iguais)
 function parseDecimal(value: FormDataEntryValue | null): number {
   if (!value) return 0
   const str = value.toString().trim()
   if (str === '') return 0
-  
-  // Remove caracteres não numéricos exceto ponto, vírgula e sinal de menos
-  // Troca vírgula por ponto para padrão internacional
   const cleanStr = str.replace(',', '.')
-  
   const parsed = parseFloat(cleanStr)
   return isNaN(parsed) ? 0 : parsed
 }
@@ -23,116 +17,108 @@ function parseIntSafe(value: FormDataEntryValue | null): number {
   if (!value) return 0
   const str = value.toString().trim()
   if (str === '') return 0
-  
   const parsed = parseInt(str)
   return isNaN(parsed) ? 0 : parsed
 }
 
 export async function createOrder(formData: FormData) {
+  console.log('--- INICIANDO CREATE ORDER ---') // LOG 1
   const supabase = await createClient()
 
-  // 1. SEGURANÇA: Verifica autenticação
+  // 1. Verifica Usuário
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    console.error('Tentativa de criar pedido sem login:', authError)
+    console.error('ERRO AUTH:', authError)
     throw new Error('Usuário não autenticado.')
   }
+  console.log('USUÁRIO OK:', user.id) // LOG 2
 
-  // 2. CRIAÇÃO DO CABEÇALHO (ORDER)
+  // 2. Cria Cabeçalho
+  console.log('TENTANDO CRIAR CABEÇALHO...') // LOG 3
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .insert({
       user_id: user.id,
-      status: 'pendente', // Status inicial correto para fluxo de produção
+      status: 'pendente',
       observacoes: (formData.get('observacoes') as string) || '',
     })
     .select()
     .single()
 
   if (orderError) {
-    console.error('FATAL: Erro ao criar cabeçalho do pedido:', orderError)
-    throw new Error('Não foi possível iniciar o pedido. Tente novamente.')
+    console.error('ERRO CABEÇALHO:', orderError) // AQUI PODE SER O ERRO
+    throw new Error(`Erro ao criar pedido: ${orderError.message}`)
   }
+  console.log('CABEÇALHO CRIADO:', order.id) // LOG 4
 
   try {
-    // 3. PREPARAÇÃO DOS DADOS DOS ITENS
-    // Extrai e limpa todos os campos antes de enviar
+    // 3. Prepara Itens
     const itemPayload = {
       order_id: order.id,
       nome_paciente: (formData.get('nome_paciente') as string)?.toUpperCase() || 'CONSUMIDOR FINAL',
       tipo_lente: (formData.get('tipo_lente') as string) || 'VISAO_SIMPLES',
-      indice_refracao: '1.56', // Valor padrão ou vindo do form
+      indice_refracao: '1.56',
       tratamento: (formData.get('tratamento') as string) || 'SEM_TRATAMENTO',
       
-      // OLHO DIREITO
       od_esferico: parseDecimal(formData.get('od_esferico')),
       od_cilindrico: parseDecimal(formData.get('od_cilindrico')),
       od_eixo: parseIntSafe(formData.get('od_eixo')),
       od_dnp: parseDecimal(formData.get('od_dnp')),
       od_altura: parseDecimal(formData.get('od_altura')),
 
-      // OLHO ESQUERDO
       oe_esferico: parseDecimal(formData.get('oe_esferico')),
       oe_cilindrico: parseDecimal(formData.get('oe_cilindrico')),
       oe_eixo: parseIntSafe(formData.get('oe_eixo')),
       oe_dnp: parseDecimal(formData.get('oe_dnp')),
       oe_altura: parseDecimal(formData.get('oe_altura')),
 
-      // ADIÇÃO
       adicao: parseDecimal(formData.get('adicao')),
     }
+    
+    console.log('PAYLOAD ITENS:', itemPayload) // LOG 5 (Verificar dados)
 
-    // 4. INSERÇÃO DOS ITENS
+    // 4. Insere Itens
     const { error: itemError } = await supabase
       .from('order_items')
       .insert(itemPayload)
 
     if (itemError) {
-      throw new Error(`Erro ao salvar itens: ${itemError.message}`)
+      console.error('ERRO AO INSERIR ITENS:', itemError) // AQUI PODE SER O ERRO
+      throw new Error(itemError.message)
     }
+    console.log('ITENS INSERIDOS COM SUCESSO!') // LOG 6
 
-  } catch (error) {
-    // ROLLBACK MANUAL: Se der erro nos itens, apaga o cabeçalho para não deixar lixo
-    console.error('ROLLBACK: Apagando pedido órfão devido a erro nos itens:', error)
+  } catch (error: any) {
+    console.error('CAIU NO CATCH:', error)
+    // Rollback
     await supabase.from('orders').delete().eq('id', order.id)
-    throw new Error('Falha ao processar os detalhes do pedido. Tente novamente.')
+    console.log('PEDIDO DELETADO (ROLLBACK)')
+    throw new Error(`Falha nos itens: ${error.message}`)
   }
 
-  // 5. SUCESSO E REDIRECIONAMENTO
-  // O redirect deve ser a última coisa e fora do try/catch
+  console.log('REDIRECIONANDO...')
   redirect('/dashboard')
 }
-// ... (mantenha os imports e a função createOrder como estão)
 
-// Substitua a função getDashboardData antiga por esta NOVA VERSÃO COMPLETA:
+// ... (Mantenha a getDashboardData aqui embaixo)
 export async function getDashboardData() {
-  const supabase = await createClient()
-  
-  // 1. Verifica Usuário
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    // Retorna estrutura vazia para não quebrar a página
-    return { profile: null, orders: [] }
-  }
+    // ... (código que já estava funcionando)
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { profile: null, orders: [] }
 
-  // 2. Busca o Perfil (Para mostrar Nome e Crédito)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
 
-  // 3. Busca os Pedidos (Para a tabela)
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(20)
+    const { data: orders } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20)
 
-  // Retorna exatamente o que a page.tsx espera: { profile, orders }
-  return {
-    profile: profile || null,
-    orders: orders || []
-  }
+    return { profile, orders: orders || [] }
 }
