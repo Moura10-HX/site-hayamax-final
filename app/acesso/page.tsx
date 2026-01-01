@@ -75,7 +75,15 @@ export default function LoginPage() {
               <span>{error}</span>
             </div>
           )}
-
+          <button
+  type="button"
+  style={{ position: 'fixed', bottom: '20px', left: '20px', zIndex: 9999, backgroundColor: 'red', color: 'white', padding: '15px', borderRadius: '50px', fontWeight: 'bold' }}
+  onClick={() => {
+    throw new Error("Teste de Estabilidade Hayamax - Sentry OK!");
+  }}          
+>
+  🚨 Testar Sentry
+</button>
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-300 uppercase ml-1">E-mail</label>
@@ -133,12 +141,3 @@ export default function LoginPage() {
     </div>
   );
 }
-<button
-  type="button"
-  style={{ position: 'fixed', bottom: '20px', left: '20px', zIndex: 9999, backgroundColor: 'red', color: 'white', padding: '15px', borderRadius: '50px', fontWeight: 'bold' }}
-  onClick={() => {
-    throw new Error("Teste de Estabilidade Hayamax - Sentry OK!");
-  }}
->
-  🚨 Testar Sentry
-</button>
