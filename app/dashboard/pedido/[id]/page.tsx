@@ -14,24 +14,38 @@ export default function OrderDetailsPage() {
   const supabase = createClient()
   
   const [pedido, setPedido] = useState<any>(null)
+  const [item, setItem] = useState<any>(null) // Novo estado para o item
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchPedido() {
-      const { data, error } = await supabase
-        .from('pedidos')
+      // 1. Busca o Pedido (Cabeçalho)
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
         .select('*')
         .eq('id', params.id)
         .single()
 
-      if (error) {
-        console.error(error)
+      if (orderError) {
+        console.error(orderError)
         alert('Pedido não encontrado.')
         router.push('/dashboard')
         return
       }
 
-      setPedido(data)
+      // 2. Busca os Itens (Lentes e Graus)
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', params.id)
+        .single() // Assumindo 1 item por pedido
+
+      if (itemsError) {
+        console.error('Erro ao buscar itens:', itemsError)
+      }
+
+      setPedido(orderData)
+      setItem(itemsData) // Salva o item separado
       setLoading(false)
     }
 
@@ -46,8 +60,9 @@ export default function OrderDetailsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pendente': return 'bg-yellow-100 text-yellow-700 border-yellow-200'
-      case 'em_producao': return 'bg-blue-100 text-blue-700 border-blue-200'
-      case 'finalizado': return 'bg-green-100 text-green-700 border-green-200'
+      case 'producao': return 'bg-blue-100 text-blue-700 border-blue-200' // Ajustado para 'producao'
+      case 'entregue': return 'bg-green-100 text-green-700 border-green-200' // Ajustado para 'entregue'
+      case 'cancelado': return 'bg-red-100 text-red-700 border-red-200'
       default: return 'bg-slate-100 text-slate-700'
     }
   }
@@ -55,11 +70,15 @@ export default function OrderDetailsPage() {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'pendente': return 'Aguardando Conferência'
-      case 'em_producao': return 'Em Produção'
-      case 'finalizado': return 'Expedido / Entregue'
+      case 'producao': return 'Em Produção'
+      case 'entregue': return 'Expedido / Entregue'
+      case 'rascunho': return 'Rascunho'
       default: return status
     }
   }
+
+  // Extrai o número da OS das observações se não tiver campo específico
+  const osCliente = pedido.observacoes?.split('|')[0]?.replace('OS:', '')?.trim() || '-'
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
@@ -85,7 +104,9 @@ export default function OrderDetailsPage() {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-800 mb-1">Ordem de Serviço</h1>
-              <p className="text-slate-500 text-sm">ID: {pedido.id}</p>
+              <p className="text-slate-500 text-sm">
+                Protocolo: #{pedido.numero_pedido || pedido.id.slice(0, 8)}
+              </p>
             </div>
             <div className={`px-4 py-2 rounded-lg border text-sm font-bold uppercase tracking-wide ${getStatusColor(pedido.status)}`}>
               {getStatusLabel(pedido.status)}
@@ -94,12 +115,12 @@ export default function OrderDetailsPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 border-t border-slate-100 pt-6">
             <div>
-              <span className="block text-xs font-bold text-slate-400 uppercase">Número da OS</span>
-              <span className="block text-lg font-bold text-slate-800 font-mono">{pedido.codigo_os}</span>
+              <span className="block text-xs font-bold text-slate-400 uppercase">Número da OS (Cliente)</span>
+              <span className="block text-lg font-bold text-slate-800 font-mono">{osCliente}</span>
             </div>
             <div>
               <span className="block text-xs font-bold text-slate-400 uppercase">Paciente</span>
-              <span className="block text-lg font-bold text-slate-800">{pedido.paciente_nome}</span>
+              <span className="block text-lg font-bold text-slate-800">{item?.nome_paciente || '-'}</span>
             </div>
             <div>
               <span className="block text-xs font-bold text-slate-400 uppercase">Data do Pedido</span>
@@ -107,7 +128,8 @@ export default function OrderDetailsPage() {
             </div>
             <div>
               <span className="block text-xs font-bold text-slate-400 uppercase">Valor Total</span>
-              <span className="block text-lg font-bold text-cyan-600">{formatMoney(pedido.valor_total || 0)}</span>
+              {/* Valor total pode vir do pedido se tivermos salvo, ou somar aqui se necessário */}
+              <span className="block text-lg font-bold text-cyan-600">R$ --,--</span> 
             </div>
           </div>
         </div>
@@ -119,15 +141,15 @@ export default function OrderDetailsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
               <span className="block text-xs text-slate-500 mb-1">Tipo de Lente</span>
-              <span className="block font-bold text-slate-800 capitalize">{pedido.tipo_lente?.replace('_', ' ')}</span>
+              <span className="block font-bold text-slate-800 capitalize">{item?.tipo_lente?.replace('_', ' ') || '-'}</span>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-              <span className="block text-xs text-slate-500 mb-1">Material</span>
-              <span className="block font-bold text-slate-800 capitalize">{pedido.material}</span>
+              <span className="block text-xs text-slate-500 mb-1">Índice de Refração</span>
+              <span className="block font-bold text-slate-800 capitalize">{item?.indice_refracao || 'Standard'}</span>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
               <span className="block text-xs text-slate-500 mb-1">Tratamento</span>
-              <span className="block font-bold text-slate-800 capitalize">{pedido.tratamentos?.replace('_', ' ') || 'Nenhum'}</span>
+              <span className="block font-bold text-slate-800 capitalize">{item?.tratamento?.replace('_', ' ') || 'Nenhum'}</span>
             </div>
           </div>
         </div>
@@ -150,27 +172,27 @@ export default function OrderDetailsPage() {
             <tbody className="text-slate-800 font-mono text-sm">
               <tr className="border-b border-slate-100">
                 <td className="p-4 font-bold text-cyan-600 font-sans">OD</td>
-                <td className="p-4">{pedido.od_esferico?.toFixed(2)}</td>
-                <td className="p-4">{pedido.od_cilindrico?.toFixed(2)}</td>
-                <td className="p-4">{pedido.od_eixo}°</td>
-                <td className="p-4 border-l border-slate-100">{pedido.od_dnp} mm</td>
-                <td className="p-4">{pedido.od_altura} mm</td>
+                <td className="p-4">{item?.od_esferico?.toFixed(2)}</td>
+                <td className="p-4">{item?.od_cilindrico?.toFixed(2)}</td>
+                <td className="p-4">{item?.od_eixo}°</td>
+                <td className="p-4 border-l border-slate-100">{item?.od_dnp} mm</td>
+                <td className="p-4">{item?.od_altura} mm</td>
               </tr>
               <tr>
                 <td className="p-4 font-bold text-slate-600 font-sans">OE</td>
-                <td className="p-4">{pedido.oe_esferico?.toFixed(2)}</td>
-                <td className="p-4">{pedido.oe_cilindrico?.toFixed(2)}</td>
-                <td className="p-4">{pedido.oe_eixo}°</td>
-                <td className="p-4 border-l border-slate-100">{pedido.oe_dnp} mm</td>
-                <td className="p-4">{pedido.oe_altura} mm</td>
+                <td className="p-4">{item?.oe_esferico?.toFixed(2)}</td>
+                <td className="p-4">{item?.oe_cilindrico?.toFixed(2)}</td>
+                <td className="p-4">{item?.oe_eixo}°</td>
+                <td className="p-4 border-l border-slate-100">{item?.oe_dnp} mm</td>
+                <td className="p-4">{item?.oe_altura} mm</td>
               </tr>
             </tbody>
           </table>
 
-          {pedido.adicao > 0 && (
+          {item?.adicao && (
             <div className="mt-6 text-center">
               <span className="inline-block bg-slate-100 px-4 py-2 rounded-full text-sm font-bold text-slate-700 border border-slate-200">
-                Adição: +{pedido.adicao.toFixed(2)}
+                Adição: {item.adicao > 0 ? '+' : ''}{Number(item.adicao).toFixed(2)}
               </span>
             </div>
           )}

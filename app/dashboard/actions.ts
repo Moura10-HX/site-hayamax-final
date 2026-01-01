@@ -37,3 +37,67 @@ export async function getDashboardData() {
     orders: orders as Order[] || []
   }
 }
+// ... (imports anteriores)
+import { redirect } from 'next/navigation'
+
+// Adicione esta nova função no final do arquivo
+export async function createOrder(formData: FormData) {
+  const supabase = await createClient()
+
+  // 1. Pega o usuário
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Não autorizado')
+
+  // 2. Cria o Pedido (Cabeçalho)
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .insert({
+      user_id: user.id,
+      status: 'rascunho', // Começa como rascunho
+      observacoes: formData.get('observacoes') as string,
+    })
+    .select()
+    .single()
+
+  if (orderError) {
+    console.error('Erro ao criar pedido:', orderError)
+    throw new Error('Falha ao criar pedido')
+  }
+
+  // 3. Cria os Itens (Lentes)
+  // Convertendo strings vazias para null ou 0 onde necessário
+  const toDecimal = (val: FormDataEntryValue | null) => val ? parseFloat(val.toString()) : 0
+  const toInt = (val: FormDataEntryValue | null) => val ? parseInt(val.toString()) : null
+
+  const { error: itemError } = await supabase
+    .from('order_items')
+    .insert({
+      order_id: order.id,
+      nome_paciente: formData.get('nome_paciente') as string,
+      tipo_lente: formData.get('tipo_lente') as string,
+      indice_refracao: '1.56', // Fixo por enquanto ou pegue do form
+      tratamento: formData.get('tratamento') as string,
+      
+      // Olho Direito
+      od_esferico: toDecimal(formData.get('od_esferico')),
+      od_cilindrico: toDecimal(formData.get('od_cilindrico')),
+      od_eixo: toInt(formData.get('od_eixo')),
+      od_dnp: toDecimal(formData.get('od_dnp')),
+
+      // Olho Esquerdo
+      oe_esferico: toDecimal(formData.get('oe_esferico')),
+      oe_cilindrico: toDecimal(formData.get('oe_cilindrico')),
+      oe_eixo: toInt(formData.get('oe_eixo')),
+      oe_dnp: toDecimal(formData.get('oe_dnp')),
+    })
+
+  if (itemError) {
+    console.error('Erro ao criar itens:', itemError)
+    // Idealmente, deletaríamos o pedido criado se o item falhar (rollback manual)
+    await supabase.from('orders').delete().eq('id', order.id)
+    throw new Error('Falha ao adicionar itens')
+  }
+
+  // 4. Sucesso! Redireciona de volta pro dashboard
+  redirect('/dashboard')
+}
