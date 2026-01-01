@@ -102,3 +102,31 @@ export async function createOrder(formData: FormData) {
   // O redirect deve ser a última coisa e fora do try/catch
   redirect('/dashboard')
 }
+// ... (mantenha o código anterior do createOrder)
+
+// Adicione esta nova função no final do arquivo
+export async function getDashboardData() {
+  const supabase = await createClient()
+  
+  // Pega o usuário atual
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  // Busca os pedidos desse usuário
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(10) // Pega os últimos 10
+
+  if (error) {
+    console.error('Erro ao buscar dashboard:', error)
+    return { orders: [], total: 0 }
+  }
+
+  return {
+    orders: orders || [],
+    total: orders?.length || 0
+  }
+}
