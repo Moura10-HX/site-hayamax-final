@@ -1,5 +1,110 @@
-import { redirect } from "next/navigation";
+'use client'
 
-export default function Home() {
-  redirect("/acesso");
+import { useState } from 'react'
+import { createBrowserClient } from '@supabase/ssr' // Mesma importação que funcionou no Novo Pedido
+import { useRouter } from 'next/navigation'
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Criação do cliente EXATAMENTE como no arquivo de Novo Pedido que funcionou
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        // Tradução amigável de erros comuns
+        if (error.message.includes('Invalid login')) {
+          setError('Email ou senha incorretos.')
+        } else if (error.message.includes('Email not confirmed')) {
+          setError('Email não confirmado. Verifique sua caixa de entrada.')
+        } else {
+          setError(error.message)
+        }
+        setLoading(false)
+      } else {
+        // SUCESSO!
+        // Força recarregamento para atualizar o estado de autenticação em toda a app
+        router.refresh() 
+        window.location.href = '/dashboard'
+      }
+    } catch (err) {
+      setError('Ocorreu um erro inesperado. Tente novamente.')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+        
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Hayamax Digital</h1>
+          <p className="text-slate-400">Acesse sua conta de parceiro</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+            <input 
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all"
+              placeholder="seu@email.com"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Senha</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-900/20 border border-red-900/50 text-red-400 p-3 rounded-lg text-sm text-center">
+              {error}
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-blue-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Entrando...' : 'Acessar Painel'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <a href="https://www.lenteshayamax.com.br" className="text-sm text-slate-500 hover:text-blue-400 transition-colors">
+            ← Voltar ao site principal
+          </a>
+        </div>
+      </div>
+    </div>
+  )
 }
