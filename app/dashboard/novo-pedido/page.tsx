@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-// import Link from 'next/link' // Removido pois vamos usar router.push para voltar
-import { createOrder } from '@/app/dashboard/actions' // <--- CAMINHO CORRIGIDO (ALIAS @)
+import { useSearchParams } from 'next/navigation' // Removemos useRouter
+// import Link from 'next/link' 
+import { createOrder } from '@/app/dashboard/actions'
 import { createBrowserClient } from '@supabase/ssr'
 
 // --- TIPAGEM ---
@@ -50,7 +50,7 @@ const TRATAMENTOS = [
 const formatMoney = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 
 function OrderContent() {
-  const router = useRouter()
+  // const router = useRouter() <--- NÃO USAMOS MAIS ROUTER DO NEXT
   const searchParams = useSearchParams()
   
   const paramCategoria = searchParams.get('categoria')
@@ -67,7 +67,6 @@ function OrderContent() {
   const [loading, setLoading] = useState(false)
   const [selection, setSelection] = useState<{ produto: Produto | null, material: any, tratamento: any }>({ produto: null, material: null, tratamento: null })
   
-  // --- NOVO ESTADO PARA ARQUIVOS ---
   const [files, setFiles] = useState<File[]>([])
 
   const [formData, setFormData] = useState({
@@ -76,6 +75,11 @@ function OrderContent() {
     oe_esferico: '', oe_cilindrico: '', oe_eixo: '', oe_dnp: '', oe_altura: '',
     adicao: ''
   })
+
+  // --- NAVEGAÇÃO FORÇADA (Resolve problema de travamento) ---
+  const forceNavigate = (path: string) => {
+    window.location.href = path
+  }
 
   const selectProduct = (prod: Produto) => { setSelection({ ...selection, produto: prod }); setStep(2) }
   
@@ -89,7 +93,6 @@ function OrderContent() {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  // --- FUNÇÃO PARA GERENCIAR ARQUIVOS ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files)
@@ -101,8 +104,8 @@ function OrderContent() {
     setFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  // --- FUNÇÃO DE UPLOAD PARA O SUPABASE ---
   const uploadFilesToStorage = async () => {
+    // Cria cliente específico para o browser
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -112,15 +115,14 @@ function OrderContent() {
 
     for (const file of files) {
       const fileExt = file.name.split('.').pop()
-      // Nome único para evitar sobrescrita
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
       const filePath = `pedidos/${fileName}`
 
       const { error } = await supabase.storage
-        .from('anexos') // Certifique-se que o bucket se chama 'anexos'
+        .from('anexos')
         .upload(filePath, file)
 
-      if (error) throw new Error(`Erro ao enviar ${file.name}: ${error.message}`)
+      if (error) throw new Error(`Erro upload ${file.name}: ${error.message}`)
 
       const { data } = supabase.storage
         .from('anexos')
@@ -188,10 +190,15 @@ function OrderContent() {
 
     setLoading(true)
     try {
-      // 1. Upload dos Arquivos (Se houver)
       let fileUrls: string[] = []
+      
+      // Tenta upload
       if (files.length > 0) {
-        fileUrls = await uploadFilesToStorage()
+        try {
+          fileUrls = await uploadFilesToStorage()
+        } catch (uploadError: any) {
+          throw new Error(`Falha no envio dos arquivos: ${uploadError.message}. Verifique se o bucket 'anexos' existe no Supabase.`)
+        }
       }
 
       const dataToSend = new FormData()
@@ -211,25 +218,23 @@ function OrderContent() {
       dataToSend.append('oe_eixo', formData.oe_eixo)
       dataToSend.append('oe_dnp', formData.oe_dnp)
 
-      // 2. Anexa as URLs dos arquivos como JSON String
       if (fileUrls.length > 0) {
         dataToSend.append('arquivos_urls', JSON.stringify(fileUrls))
       }
 
-      // 3. Chama a Action e espera a resposta
       const result = await createOrder(dataToSend) as any
 
-      // 4. Verifica o resultado e redireciona manualmente
       if (result?.success) {
         alert('Pedido criado com sucesso!')
-        router.push('/dashboard') // <--- REDIRECT FEITO PELO NAVEGADOR
+        // NAVEGAÇÃO FORÇADA: Recarrega a página do zero
+        window.location.href = '/dashboard' 
       } else {
-        throw new Error(result?.message || 'Erro ao processar pedido')
+        throw new Error(result?.message || 'Erro desconhecido ao salvar no banco.')
       }
       
     } catch (error: any) {
       console.error(error)
-      alert(`Erro ao criar pedido: ${error.message || 'Erro desconhecido'}`)
+      alert(`ERRO: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -243,11 +248,11 @@ function OrderContent() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              {/* BOTÃO VOLTAR CORRIGIDO */}
+              {/* BOTÃO VOLTAR COM NAVEGAÇÃO FORÇADA */}
               <button 
-                onClick={() => router.push('/dashboard')} 
+                onClick={() => forceNavigate('/dashboard')} 
                 className="text-slate-400 hover:text-cyan-600 transition-colors p-1 rounded-full hover:bg-slate-100 mr-2"
-                title="Voltar para o Dashboard"
+                title="Voltar para o Dashboard (Recarregar)"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -270,7 +275,10 @@ function OrderContent() {
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-8">
-
+        {/* ... (O RESTO DO CONTEÚDO PERMANECE IDÊNTICO AO ANTERIOR) ... */}
+        {/* Para economizar espaço, mantenha o conteúdo dos steps 1, 2 e 3 exatamente como estavam. */}
+        {/* Se precisar que eu repita o código inteiro dos steps, me avise. */}
+        
         {/* --- PASSO 1: VITRINE --- */}
         {step === 1 && (
           <div className="animate-fade-in space-y-10">
