@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createOrder } from '../actions'
+import { createBrowserClient } from '@supabase/ssr' // Import necessário para upload
 
 // --- TIPAGEM ---
 type Produto = {
@@ -66,6 +67,9 @@ function OrderContent() {
   const [loading, setLoading] = useState(false)
   const [selection, setSelection] = useState<{ produto: Produto | null, material: any, tratamento: any }>({ produto: null, material: null, tratamento: null })
   
+  // --- NOVO ESTADO PARA ARQUIVOS ---
+  const [files, setFiles] = useState<File[]>([])
+
   const [formData, setFormData] = useState({
     codigo_os: '', paciente_nome: '', cor: 'incolor',
     od_esferico: '', od_cilindrico: '', od_eixo: '', od_dnp: '', od_altura: '',
@@ -81,21 +85,60 @@ function OrderContent() {
     setStep(3) 
   }
   
-  // Permite digitar livremente (incluindo negativo e ponto)
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  // --- REGRAS DE NEGÓCIO ÓPTICO (Ao sair do campo) ---
+  // --- FUNÇÃO PARA GERENCIAR ARQUIVOS ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files)
+      setFiles(prev => [...prev, ...newFiles])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // --- FUNÇÃO DE UPLOAD PARA O SUPABASE ---
+  const uploadFilesToStorage = async () => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    const uploadedUrls: string[] = []
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      // Nome único para evitar sobrescrita
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `pedidos/${fileName}`
+
+      const { error } = await supabase.storage
+        .from('anexos') // Certifique-se que o bucket se chama 'anexos'
+        .upload(filePath, file)
+
+      if (error) throw new Error(`Erro ao enviar ${file.name}: ${error.message}`)
+
+      const { data } = supabase.storage
+        .from('anexos')
+        .getPublicUrl(filePath)
+
+      uploadedUrls.push(data.publicUrl)
+    }
+
+    return uploadedUrls
+  }
+
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     if (!value) return
 
-    // Troca vírgula por ponto para cálculo
     let valorNumerico = parseFloat(value.replace(',', '.'))
-    if (isNaN(valorNumerico)) return // Se não for número, ignora
+    if (isNaN(valorNumerico)) return
 
-    // REGRA 4: EIXO (0 a 180 inteiro)
     if (name.includes('eixo')) {
       if (valorNumerico < 0) valorNumerico = 0
       if (valorNumerico > 180) valorNumerico = 180
@@ -103,37 +146,30 @@ function OrderContent() {
       return
     }
 
-    // REGRA 3: ESFÉRICO, CILÍNDRICO E ADIÇÃO (Múltiplos de 0.25)
     if (name.includes('esferico') || name.includes('cilindrico') || name.includes('adicao')) {
-      // Arredonda para o 0.25 mais próximo
       valorNumerico = Math.round(valorNumerico * 4) / 4
 
-      // REGRA 1: CILÍNDRICO SEMPRE NEGATIVO
       if (name.includes('cilindrico')) {
-        valorNumerico = -Math.abs(valorNumerico) // Força negativo
+        valorNumerico = -Math.abs(valorNumerico)
       }
 
-      // REGRA 2: ADIÇÃO SEMPRE POSITIVA
       if (name.includes('adicao')) {
-        valorNumerico = Math.abs(valorNumerico) // Força positivo
-        setFormData(prev => ({ ...prev, [name]: `+${valorNumerico.toFixed(2)}` })) // Adiciona o "+" visual
+        valorNumerico = Math.abs(valorNumerico)
+        setFormData(prev => ({ ...prev, [name]: `+${valorNumerico.toFixed(2)}` }))
         return
       }
 
-      // REGRA 5: FORMATAÇÃO (1 -> 1.00)
       setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(2) }))
     }
 
-    // Formatação visual para DNP e Altura
     if (name.includes('dnp') || name.includes('altura')) {
       setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(1) }))
     }
   }
 
-  // --- REGRA 6: ENTER PARA PRÓXIMO CAMPO ---
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      e.preventDefault() // Evita enviar o formulário
+      e.preventDefault()
       const form = e.currentTarget.form
       if (!form) return
       
@@ -152,16 +188,18 @@ function OrderContent() {
 
     setLoading(true)
     try {
+      // 1. Upload dos Arquivos (Se houver)
+      let fileUrls: string[] = []
+      if (files.length > 0) {
+        fileUrls = await uploadFilesToStorage()
+      }
+
       const dataToSend = new FormData()
       
       dataToSend.append('observacoes', `OS: ${formData.codigo_os} | Produto: ${selection.produto.nome} | Material: ${selection.material.nome}`)
       dataToSend.append('nome_paciente', formData.paciente_nome)
       dataToSend.append('tipo_lente', selection.produto.tipo_tecnico)
       dataToSend.append('tratamento', selection.tratamento?.nome || 'Sem tratamento')
-      
-      // Limpa os valores para envio (remove o "+" da adição se tiver, para salvar limpo ou mantém string se preferir)
-      // Aqui enviamos como string formatada mesmo, o banco aceita numeric ou text dependendo da coluna.
-      // Se sua coluna no banco for numeric, o Postgres aceita "-2.50" tranquilo.
       
       dataToSend.append('od_esferico', formData.od_esferico)
       dataToSend.append('od_cilindrico', formData.od_cilindrico)
@@ -173,10 +211,16 @@ function OrderContent() {
       dataToSend.append('oe_eixo', formData.oe_eixo)
       dataToSend.append('oe_dnp', formData.oe_dnp)
 
+      // 2. Anexa as URLs dos arquivos como JSON String
+      if (fileUrls.length > 0) {
+        dataToSend.append('arquivos_urls', JSON.stringify(fileUrls))
+      }
+
       await createOrder(dataToSend)
-    } catch (error) {
+      
+    } catch (error: any) {
       console.error(error)
-      alert('Erro ao criar pedido. Verifique os dados e tente novamente.')
+      alert(`Erro ao criar pedido: ${error.message || 'Erro desconhecido'}`)
     } finally {
       setLoading(false)
     }
@@ -361,6 +405,33 @@ function OrderContent() {
                     </div>
                   </div>
                 </div>
+
+                {/* --- NOVO BLOCO: UPLOAD DE ARQUIVOS --- */}
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Anexos (Receita / Fotos)</h3>
+                  <div className="flex flex-col gap-4">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg className="w-8 h-8 mb-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                        <p className="text-sm text-slate-500"><span className="font-semibold">Clique para enviar</span> ou arraste</p>
+                        <p className="text-xs text-slate-400">PNG, JPG ou PDF</p>
+                      </div>
+                      <input type="file" multiple className="hidden" onChange={handleFileChange} />
+                    </label>
+
+                    {files.length > 0 && (
+                      <ul className="space-y-2">
+                        {files.map((file, index) => (
+                          <li key={index} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200 text-sm">
+                            <span className="truncate max-w-[200px] text-slate-600">{file.name}</span>
+                            <button type="button" onClick={() => removeFile(index)} className="text-red-500 hover:text-red-700 font-bold px-2">×</button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
               </form>
             </div>
 
@@ -372,6 +443,9 @@ function OrderContent() {
                   <div className="flex justify-between"><span className="text-slate-500">Produto</span><span className="text-slate-800 font-bold text-right">{selection.produto.nome}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Material</span><span className="text-slate-800">{selection.material.nome}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Tratamento</span><span className="text-slate-800">{selection.tratamento.nome}</span></div>
+                  {files.length > 0 && (
+                    <div className="flex justify-between"><span className="text-slate-500">Anexos</span><span className="text-slate-800">{files.length} arquivo(s)</span></div>
+                  )}
                 </div>
                 <div className="flex justify-between items-end mb-6 pt-4 border-t border-slate-100">
                   <span className="text-slate-500 font-bold">Total Estimado</span>
@@ -379,7 +453,7 @@ function OrderContent() {
                 </div>
                 <div className="flex flex-col gap-3">
                   <button onClick={handleSubmit} disabled={loading} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 rounded-lg shadow-lg shadow-cyan-600/20 disabled:opacity-50 transition-all">
-                    {loading ? 'Enviando...' : 'Finalizar Pedido'}
+                    {loading ? (files.length > 0 ? 'Enviando Arquivos...' : 'Criando Pedido...') : 'Finalizar Pedido'}
                   </button>
                   <button onClick={() => setStep(1)} className="w-full py-2 text-slate-500 hover:text-slate-800 text-sm font-medium hover:underline">Voltar e editar</button>
                 </div>

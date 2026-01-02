@@ -75,6 +75,37 @@ export async function createOrder(formData: FormData) {
     throw new Error('Erro ao salvar itens do pedido')
   }
 
+  // --- NOVO: 4. Salvar Arquivos (Anexos) ---
+  // Recupera a string JSON com as URLs dos arquivos enviada pelo frontend
+  const arquivosJson = formData.get('arquivos_urls') as string
+  
+  if (arquivosJson) {
+    try {
+      const urlsArquivos = JSON.parse(arquivosJson) as string[]
+      
+      if (Array.isArray(urlsArquivos) && urlsArquivos.length > 0) {
+        const arquivosParaInserir = urlsArquivos.map(url => ({
+          order_id: order.id, // Vincula ao pedido criado
+          file_url: url,      // URL pública do arquivo
+          file_type: 'anexo', // Tipo genérico ou extrair da extensão
+          created_at: new Date().toISOString()
+        }))
+
+        // Insere na tabela 'order_attachments' (ou o nome que você usa no banco)
+        const { error: fileError } = await supabase
+          .from('order_attachments') 
+          .insert(arquivosParaInserir)
+
+        if (fileError) {
+          console.error('Erro ao salvar anexos:', fileError)
+          // Não vamos deletar o pedido se só o anexo falhar, mas logamos o erro
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao processar JSON de arquivos:', e)
+    }
+  }
+
   redirect('/dashboard')
 }
 
