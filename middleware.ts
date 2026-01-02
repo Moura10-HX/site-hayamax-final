@@ -26,19 +26,21 @@ export async function middleware(request: NextRequest) {
 
   // --- CAMADA DE CORREÇÃO DE ROTA (CRÍTICO) ---
   
-  // Se o navegador tentar acessar /login (por cache ou erro), forçamos a ida para a Home
+  // CORREÇÃO DEFINITIVA: 
+  // Se o navegador tentar acessar /login, mandamos para o SITE OFICIAL externo.
+  // Note que não usamos 'new URL', passamos a string direta para sair do subdomínio.
   if (path === '/login') {
-    return NextResponse.redirect(new URL('/', request.url))
+    return NextResponse.redirect('https://www.lenteshayamax.com.br')
   }
 
   // --- REGRAS DE NEGÓCIO ---
 
-  // 1. Usuário Logado tentando acessar a Home -> Vai pro Dashboard
+  // 1. Usuário Logado tentando acessar a Home do App -> Vai pro Dashboard
   if (path === '/' && user) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // 2. Usuário NÃO Logado tentando acessar Dashboard -> Vai pra Home (Login)
+  // 2. Usuário NÃO Logado tentando acessar Dashboard -> Vai pra Home do App (Login)
   if (path.startsWith('/dashboard') && !user) {
     return NextResponse.redirect(new URL('/', request.url))
   }
