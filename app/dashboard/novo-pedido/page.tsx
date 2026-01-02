@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation' // Removemos useRouter
-// import Link from 'next/link' 
+import { useSearchParams } from 'next/navigation'
 import { createOrder } from '@/app/dashboard/actions'
 import { createBrowserClient } from '@supabase/ssr'
 
@@ -13,7 +12,7 @@ type Produto = {
   nome: string
   desc: string
   icon: string
-  tipo_tecnico: string
+  tipo_tecnico: 'multifocal' | 'visao_simples' | 'ocupacional' | 'bifocal' // Tipagem refinada para ajudar na lógica
   preco: number
 }
 
@@ -22,7 +21,7 @@ const CATALOGO: Record<string, Produto[]> = {
   surfacada: [
     { id: 'multi_hd', grupo: 'Multifocais Digitais', nome: 'Hayamax Multifocal HD', desc: 'Campo ampliado com tecnologia Freeform.', icon: '💎', tipo_tecnico: 'multifocal', preco: 250 },
     { id: 'multi_comfort', grupo: 'Multifocais Digitais', nome: 'Hayamax Comfort', desc: 'Adaptação suave para o dia a dia.', icon: '✨', tipo_tecnico: 'multifocal', preco: 180 },
-    { id: 'vs_digital', grupo: 'Visão Simples', nome: 'VS Digital Surfaçada', desc: 'Alta precisão para miopias complexas.', icon: '🎯', tipo_tecnico: 'visao_simples', preco: 120 },
+    { id: 'vs_digital', grupo: 'Visão Simples', nome: 'Hayamax Single Digital', desc: 'Alta precisão para miopias complexas.', icon: '🎯', tipo_tecnico: 'visao_simples', preco: 120 },
     { id: 'office_work', grupo: 'Ocupacionais', nome: 'Hayamax Office', desc: 'Foco em computador e leitura.', icon: '💼', tipo_tecnico: 'ocupacional', preco: 200 },
     { id: 'bifocal', grupo: 'Ocupacionais', nome: 'Bifocal Digital', desc: 'O clássico reinventado digitalmente.', icon: '👓', tipo_tecnico: 'bifocal', preco: 150 }
   ],
@@ -50,7 +49,6 @@ const TRATAMENTOS = [
 const formatMoney = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 
 function OrderContent() {
-  // const router = useRouter() <--- NÃO USAMOS MAIS ROUTER DO NEXT
   const searchParams = useSearchParams()
   
   const paramCategoria = searchParams.get('categoria')
@@ -76,7 +74,12 @@ function OrderContent() {
     adicao: ''
   })
 
-  // --- NAVEGAÇÃO FORÇADA (Resolve problema de travamento) ---
+  // --- REGRAS DE VISIBILIDADE ---
+  const isMultifocal = selection.produto?.tipo_tecnico === 'multifocal'
+  const isVisaoSimples = selection.produto?.tipo_tecnico === 'visao_simples'
+  const showAdicao = !isVisaoSimples // Oculta Adição se for Visão Simples (Hayamax Single)
+
+  // --- NAVEGAÇÃO FORÇADA ---
   const forceNavigate = (path: string) => {
     window.location.href = path
   }
@@ -105,7 +108,6 @@ function OrderContent() {
   }
 
   const uploadFilesToStorage = async () => {
-    // Cria cliente específico para o browser
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -118,54 +120,63 @@ function OrderContent() {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
       const filePath = `pedidos/${fileName}`
 
-      const { error } = await supabase.storage
-        .from('anexos')
-        .upload(filePath, file)
-
+      const { error } = await supabase.storage.from('anexos').upload(filePath, file)
       if (error) throw new Error(`Erro upload ${file.name}: ${error.message}`)
-
-      const { data } = supabase.storage
-        .from('anexos')
-        .getPublicUrl(filePath)
-
+      const { data } = supabase.storage.from('anexos').getPublicUrl(filePath)
       uploadedUrls.push(data.publicUrl)
     }
 
     return uploadedUrls
   }
 
+  // --- VALIDAÇÃO INTELIGENTE NO BLUR (LIMITES E MÁSCARAS) ---
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     if (!value) return
 
-    let valorNumerico = parseFloat(value.replace(',', '.'))
-    if (isNaN(valorNumerico)) return
+    let num = parseFloat(value.replace(',', '.'))
+    if (isNaN(num)) return
 
-    if (name.includes('eixo')) {
-      if (valorNumerico < 0) valorNumerico = 0
-      if (valorNumerico > 180) valorNumerico = 180
-      setFormData(prev => ({ ...prev, [name]: Math.round(valorNumerico).toString() }))
+    // Regras DNP (24 a 40, passo 0.5)
+    if (name.includes('dnp')) {
+      if (num < 24) num = 24
+      if (num > 40) num = 40
+      num = Math.round(num * 2) / 2 // Arredonda para 0.5
+      setFormData(prev => ({ ...prev, [name]: num.toFixed(1).replace('.', ',') }))
       return
     }
 
-    if (name.includes('esferico') || name.includes('cilindrico') || name.includes('adicao')) {
-      valorNumerico = Math.round(valorNumerico * 4) / 4
-
-      if (name.includes('cilindrico')) {
-        valorNumerico = -Math.abs(valorNumerico)
-      }
-
-      if (name.includes('adicao')) {
-        valorNumerico = Math.abs(valorNumerico)
-        setFormData(prev => ({ ...prev, [name]: `+${valorNumerico.toFixed(2)}` }))
-        return
-      }
-
-      setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(2) }))
+    // Regras Altura (16 a 35, passo 0.5)
+    if (name.includes('altura')) {
+      if (num < 16) num = 16
+      if (num > 35) num = 35
+      num = Math.round(num * 2) / 2 // Arredonda para 0.5
+      setFormData(prev => ({ ...prev, [name]: num.toFixed(1).replace('.', ',') }))
+      return
     }
 
-    if (name.includes('dnp') || name.includes('altura')) {
-      setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(1) }))
+    // Regras Adição (0.75 a 3.50, passo 0.25)
+    if (name === 'adicao') {
+      if (num < 0.75) num = 0.75
+      if (num > 3.50) num = 3.50
+      num = Math.round(num * 4) / 4 // Arredonda para 0.25
+      setFormData(prev => ({ ...prev, [name]: `+${num.toFixed(2).replace('.', ',')}` }))
+      return
+    }
+
+    // Regras Eixo (0 a 180)
+    if (name.includes('eixo')) {
+      if (num < 0) num = 0
+      if (num > 180) num = 180
+      setFormData(prev => ({ ...prev, [name]: Math.round(num).toString() }))
+      return
+    }
+
+    // Regras Esférico/Cilíndrico (Passo 0.25)
+    if (name.includes('esferico') || name.includes('cilindrico')) {
+      num = Math.round(num * 4) / 4
+      if (name.includes('cilindrico')) num = -Math.abs(num)
+      setFormData(prev => ({ ...prev, [name]: num.toFixed(2).replace('.', ',') }))
     }
   }
 
@@ -174,30 +185,44 @@ function OrderContent() {
       e.preventDefault()
       const form = e.currentTarget.form
       if (!form) return
-      
       const index = Array.prototype.indexOf.call(form, e.currentTarget)
       const nextElement = form.elements[index + 1] as HTMLElement
-      
-      if (nextElement) {
-        nextElement.focus()
-      }
+      if (nextElement) nextElement.focus()
     }
   }
 
   const handleSubmit = async () => {
-    if (!formData.paciente_nome || !formData.codigo_os) return alert('Preencha a OS e o Nome do Cliente.')
+    // 1. Validações Obrigatórias Básicas
+    if (!formData.codigo_os.trim()) return alert('ERRO: O campo "Número da OS" é obrigatório.')
+    if (!formData.paciente_nome.trim()) return alert('ERRO: O campo "Nome do Cliente" é obrigatório.')
+    
+    // 2. Validação DNP e Altura (Obrigatórios)
+    if (!formData.od_dnp || !formData.od_altura) return alert('ERRO: DNP e Altura do Olho Direito são obrigatórios.')
+    if (!formData.oe_dnp || !formData.oe_altura) return alert('ERRO: DNP e Altura do Olho Esquerdo são obrigatórios.')
+
+    // 3. Validação Cilíndrico x Eixo (Se tem cilindro, exige eixo)
+    if (formData.od_cilindrico && formData.od_cilindrico !== '0,00' && !formData.od_eixo) {
+      return alert('ERRO: Olho Direito tem valor Cilíndrico, então o EIXO é obrigatório.')
+    }
+    if (formData.oe_cilindrico && formData.oe_cilindrico !== '0,00' && !formData.oe_eixo) {
+      return alert('ERRO: Olho Esquerdo tem valor Cilíndrico, então o EIXO é obrigatório.')
+    }
+
+    // 4. Validação Adição (Obrigatória para Multifocal)
+    if (isMultifocal && !formData.adicao) {
+      return alert('ERRO: Para lentes Multifocais, o campo "Adição" é obrigatório.')
+    }
+
     if (!selection.produto || !selection.material) return alert('Erro na seleção do produto.')
 
     setLoading(true)
     try {
       let fileUrls: string[] = []
-      
-      // Tenta upload
       if (files.length > 0) {
         try {
           fileUrls = await uploadFilesToStorage()
         } catch (uploadError: any) {
-          throw new Error(`Falha no envio dos arquivos: ${uploadError.message}. Verifique se o bucket 'anexos' existe no Supabase.`)
+          throw new Error(`Falha no envio dos arquivos: ${uploadError.message}`)
         }
       }
 
@@ -212,11 +237,15 @@ function OrderContent() {
       dataToSend.append('od_cilindrico', formData.od_cilindrico)
       dataToSend.append('od_eixo', formData.od_eixo)
       dataToSend.append('od_dnp', formData.od_dnp)
+      dataToSend.append('od_altura', formData.od_altura) // Envia Altura OD
       
       dataToSend.append('oe_esferico', formData.oe_esferico)
       dataToSend.append('oe_cilindrico', formData.oe_cilindrico)
       dataToSend.append('oe_eixo', formData.oe_eixo)
       dataToSend.append('oe_dnp', formData.oe_dnp)
+      dataToSend.append('oe_altura', formData.oe_altura) // Envia Altura OE
+
+      if (showAdicao) dataToSend.append('adicao', formData.adicao) // Só envia adição se aplicável
 
       if (fileUrls.length > 0) {
         dataToSend.append('arquivos_urls', JSON.stringify(fileUrls))
@@ -226,7 +255,6 @@ function OrderContent() {
 
       if (result?.success) {
         alert('Pedido criado com sucesso!')
-        // NAVEGAÇÃO FORÇADA: Recarrega a página do zero
         window.location.href = '/dashboard' 
       } else {
         throw new Error(result?.message || 'Erro desconhecido ao salvar no banco.')
@@ -248,36 +276,28 @@ function OrderContent() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              {/* BOTÃO VOLTAR COM NAVEGAÇÃO FORÇADA */}
               <button 
                 onClick={() => forceNavigate('/dashboard')} 
                 className="text-slate-400 hover:text-cyan-600 transition-colors p-1 rounded-full hover:bg-slate-100 mr-2"
-                title="Voltar para o Dashboard (Recarregar)"
+                title="Voltar para o Dashboard"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </button>
-              
               {step === 1 ? (categoria === 'surfacada' ? 'Catálogo Digital' : 'Estoque Pronta Entrega') : 'Novo Pedido'}
             </h1>
             <p className="text-xs text-slate-500 ml-9">
               {step === 1 ? 'Selecione o produto' : step === 2 ? 'Personalização' : 'Dados Técnicos'}
             </p>
           </div>
-          
           <div className="flex items-center gap-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className={`w-2 h-2 rounded-full transition-all ${step >= i ? 'bg-cyan-600 scale-110' : 'bg-slate-200'}`} />
-            ))}
+            {[1, 2, 3].map(i => (<div key={i} className={`w-2 h-2 rounded-full transition-all ${step >= i ? 'bg-cyan-600 scale-110' : 'bg-slate-200'}`} />))}
           </div>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-8">
-        {/* ... (O RESTO DO CONTEÚDO PERMANECE IDÊNTICO AO ANTERIOR) ... */}
-        {/* Para economizar espaço, mantenha o conteúdo dos steps 1, 2 e 3 exatamente como estavam. */}
-        {/* Se precisar que eu repita o código inteiro dos steps, me avise. */}
         
         {/* --- PASSO 1: VITRINE --- */}
         {step === 1 && (
@@ -288,27 +308,16 @@ function OrderContent() {
                   <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{grupo}</h2>
                   <div className="h-px bg-slate-200 w-full"></div>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {produtos.map((prod) => (
-                    <button 
-                      key={prod.id} 
-                      onClick={() => selectProduct(prod)} 
-                      className="group bg-white border border-slate-200 hover:border-cyan-500 rounded-xl p-6 text-left transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col h-full relative overflow-hidden"
-                    >
+                    <button key={prod.id} onClick={() => selectProduct(prod)} className="group bg-white border border-slate-200 hover:border-cyan-500 rounded-xl p-6 text-left transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col h-full relative overflow-hidden">
                       <div className="flex justify-between items-start mb-4">
-                        <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center text-2xl group-hover:bg-cyan-50 group-hover:text-cyan-600 transition-colors">
-                          {prod.icon}
-                        </div>
-                        <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-cyan-100 group-hover:text-cyan-700">
-                          {formatMoney(prod.preco)}
-                        </span>
+                        <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center text-2xl group-hover:bg-cyan-50 group-hover:text-cyan-600 transition-colors">{prod.icon}</div>
+                        <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-cyan-100 group-hover:text-cyan-700">{formatMoney(prod.preco)}</span>
                       </div>
                       <h3 className="font-bold text-slate-800 text-lg mb-2 group-hover:text-cyan-700 transition-colors">{prod.nome}</h3>
                       <p className="text-sm text-slate-500 mb-6 leading-relaxed flex-1">{prod.desc}</p>
-                      <div className="w-full py-2.5 text-center text-sm font-bold text-cyan-600 border border-cyan-100 rounded-lg bg-cyan-50 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
-                        Configurar Lente
-                      </div>
+                      <div className="w-full py-2.5 text-center text-sm font-bold text-cyan-600 border border-cyan-100 rounded-lg bg-cyan-50 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">Configurar Lente</div>
                     </button>
                   ))}
                 </div>
@@ -326,45 +335,28 @@ function OrderContent() {
                 <h2 className="font-bold text-slate-800 text-2xl">{selection.produto.nome}</h2>
                 <p className="text-slate-500">{selection.produto.desc}</p>
               </div>
-              <button onClick={() => setStep(1)} className="ml-auto text-sm text-cyan-600 hover:text-cyan-700 font-bold hover:underline">
-                Alterar Produto
-              </button>
+              <button onClick={() => setStep(1)} className="ml-auto text-sm text-cyan-600 hover:text-cyan-700 font-bold hover:underline">Alterar Produto</button>
             </div>
-
             <div className="grid md:grid-cols-2 gap-8">
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2">
-                  <span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> Material
-                </h3>
+                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2"><span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> Material</h3>
                 <div className="space-y-2">
                   {MATERIAIS.map(mat => (
-                    <button key={mat.id} onClick={() => setSelection({...selection, material: mat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.material?.id === mat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>
-                      {mat.nome}
-                      {selection.material?.id === mat.id && <span className="text-cyan-600">✓</span>}
-                    </button>
+                    <button key={mat.id} onClick={() => setSelection({...selection, material: mat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.material?.id === mat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>{mat.nome}{selection.material?.id === mat.id && <span className="text-cyan-600">✓</span>}</button>
                   ))}
                 </div>
               </div>
-
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2">
-                  <span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Tratamento
-                </h3>
+                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2"><span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Tratamento</h3>
                 <div className="space-y-2">
                   {TRATAMENTOS.map(trat => (
-                    <button key={trat.id} onClick={() => setSelection({...selection, tratamento: trat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.tratamento?.id === trat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>
-                      <span>{trat.nome}</span>
-                      {trat.custo > 0 && <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-normal border border-slate-200">+ {formatMoney(trat.custo)}</span>}
-                    </button>
+                    <button key={trat.id} onClick={() => setSelection({...selection, tratamento: trat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.tratamento?.id === trat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}><span>{trat.nome}</span>{trat.custo > 0 && <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-normal border border-slate-200">+ {formatMoney(trat.custo)}</span>}</button>
                   ))}
                 </div>
               </div>
             </div>
-
             <div className="flex justify-end mt-8">
-              <button onClick={() => selectOptions(selection.material, selection.tratamento)} disabled={!selection.material} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 px-12 rounded-lg shadow-lg shadow-cyan-600/20 disabled:opacity-50 disabled:shadow-none transition-all transform hover:-translate-y-0.5">
-                Avançar para Medidas →
-              </button>
+              <button onClick={() => selectOptions(selection.material, selection.tratamento)} disabled={!selection.material} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 px-12 rounded-lg shadow-lg shadow-cyan-600/20 disabled:opacity-50 disabled:shadow-none transition-all transform hover:-translate-y-0.5">Avançar para Medidas →</button>
             </div>
           </div>
         )}
@@ -374,16 +366,16 @@ function OrderContent() {
           <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
             
             <div className="lg:col-span-2 space-y-6">
-              <form className="contents"> {/* Form wrapper para o Enter funcionar */}
+              <form className="contents">
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Identificação</h3>
+                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Identificação Obrigatória</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Número da OS</label>
+                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Número da OS <span className="text-red-500">*</span></label>
                       <input name="codigo_os" onChange={handleChange} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded-lg p-3 text-slate-800 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono" placeholder="Ex: 12345" />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Nome do Cliente</label>
+                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Nome do Cliente <span className="text-red-500">*</span></label>
                       <input name="paciente_nome" onChange={handleChange} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded-lg p-3 text-slate-800 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all" placeholder="Nome Completo" />
                     </div>
                   </div>
@@ -399,8 +391,8 @@ function OrderContent() {
                           <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Esférico</th>
                           <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Cilíndrico</th>
                           <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Eixo</th>
-                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 border-l border-slate-200">DNP</th>
-                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 rounded-r-lg">Altura</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 border-l border-slate-200">DNP <span className="text-red-500">*</span></th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 rounded-r-lg">Altura <span className="text-red-500">*</span></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -409,29 +401,44 @@ function OrderContent() {
                           <td className="p-1"><input name="od_esferico" value={formData.od_esferico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
                           <td className="p-1"><input name="od_cilindrico" value={formData.od_cilindrico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
                           <td className="p-1"><input name="od_eixo" value={formData.od_eixo} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0" /></td>
-                          <td className="p-1 border-l border-slate-100"><input name="od_dnp" value={formData.od_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
-                          <td className="p-1"><input name="od_altura" value={formData.od_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                          <td className="p-1 border-l border-slate-100"><input name="od_dnp" value={formData.od_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="Min 24" /></td>
+                          <td className="p-1"><input name="od_altura" value={formData.od_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="Min 16" /></td>
                         </tr>
                         <tr>
                           <td className="py-4 font-bold text-slate-600">OE</td>
                           <td className="p-1"><input name="oe_esferico" value={formData.oe_esferico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
                           <td className="p-1"><input name="oe_cilindrico" value={formData.oe_cilindrico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
                           <td className="p-1"><input name="oe_eixo" value={formData.oe_eixo} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0" /></td>
-                          <td className="p-1 border-l border-slate-100"><input name="oe_dnp" value={formData.oe_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
-                          <td className="p-1"><input name="oe_altura" value={formData.oe_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                          <td className="p-1 border-l border-slate-100"><input name="oe_dnp" value={formData.oe_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="Min 24" /></td>
+                          <td className="p-1"><input name="oe_altura" value={formData.oe_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="Min 16" /></td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-6 flex justify-center">
-                    <div className="flex items-center gap-3 bg-slate-50 px-6 py-3 rounded-lg border border-slate-200">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Adição</span>
-                      <input name="adicao" value={formData.adicao} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} placeholder="+0.00" className="w-24 bg-transparent text-center font-bold text-lg text-slate-800 outline-none font-mono" />
+                  
+                  {/* CAMPO ADIÇÃO CONDICIONAL */}
+                  {showAdicao && (
+                    <div className="mt-6 flex justify-center">
+                      <div className="flex items-center gap-3 bg-slate-50 px-6 py-3 rounded-lg border border-slate-200">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                          Adição {isMultifocal && <span className="text-red-500">*</span>}
+                        </span>
+                        <input 
+                          name="adicao" 
+                          value={formData.adicao} 
+                          onChange={handleChange} 
+                          onBlur={handleBlur} 
+                          onKeyDown={handleKeyDown}
+                          placeholder="+0,75" 
+                          className="w-24 bg-transparent text-center font-bold text-lg text-slate-800 outline-none font-mono" 
+                        />
+                        <span className="text-[10px] text-slate-400 block max-w-[80px] leading-tight">Min: 0,75<br/>Max: 3,50</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* --- NOVO BLOCO: UPLOAD DE ARQUIVOS --- */}
+                {/* Bloco de Upload */}
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                   <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Anexos (Receita / Fotos)</h3>
                   <div className="flex flex-col gap-4">
