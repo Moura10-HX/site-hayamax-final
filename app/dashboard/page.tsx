@@ -1,4 +1,4 @@
-import { getDashboardData, signOutAction } from './actions' // <--- ADICIONADO signOutAction
+import { getDashboardData, signOutAction } from './actions'
 import { redirect } from 'next/navigation'
 import Link from "next/link"
 import { 
@@ -18,7 +18,9 @@ export default async function DashboardPage() {
 
   // 2. Se não tiver dados (não logado), redireciona
   if (!data) {
-    redirect('/login')
+    // CORREÇÃO CRÍTICA AQUI:
+    // Mudamos de '/login' (que não existe) para '/' (que é a sua tela de login real)
+    redirect('/') 
   }
 
   const { profile, orders } = data
@@ -44,7 +46,7 @@ export default async function DashboardPage() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          {/* BOTÃO SAIR CORRIGIDO */}
+          {/* BOTÃO SAIR VIA SERVER ACTION */}
           <form action={signOutAction}>
             <button 
               type="submit"
@@ -205,7 +207,7 @@ function StatusBadge({ status }: { status: string }) {
     "analise": "bg-amber-900/30 text-amber-400 border-amber-800",
     "entregue": "bg-green-900/30 text-green-400 border-green-800",
     "cancelado": "bg-red-900/30 text-red-400 border-red-800",
-    "pendente": "bg-yellow-900/30 text-yellow-400 border-yellow-800", // Adicionei pendente
+    "pendente": "bg-yellow-900/30 text-yellow-400 border-yellow-800",
   }
   
   const statusKey = status?.toLowerCase() || 'rascunho'
