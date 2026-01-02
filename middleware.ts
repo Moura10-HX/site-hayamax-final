@@ -2,47 +2,37 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // 1. Setup inicial
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-  const supabase = createServerClient(supabaseUrl, supabaseKey, {
-    cookies: {
-      getAll() { return request.cookies.getAll() },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-        response = NextResponse.next({ request: { headers: request.headers } })
-        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          response = NextResponse.next({ request: { headers: request.headers } })
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+        },
       },
-    },
-  })
+    }
+  )
 
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
-  // --- CAMADA DE CORREÇÃO DE ROTA (CRÍTICO) ---
-  
-  // CORREÇÃO DEFINITIVA: 
-  // Se o navegador tentar acessar /login, mandamos para o SITE OFICIAL externo.
-  // Note que não usamos 'new URL', passamos a string direta para sair do subdomínio.
-  if (path === '/login') {
-    return NextResponse.redirect('https://www.lenteshayamax.com.br')
-  }
-
-  // --- REGRAS DE NEGÓCIO ---
-
-  // 1. Usuário Logado tentando acessar a Home do App -> Vai pro Dashboard
-  if (path === '/' && user) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // 2. Usuário NÃO Logado tentando acessar Dashboard -> Vai pra Home do App (Login)
+  // REGRA ÚNICA E SEGURA:
+  // Se tentar acessar o Dashboard sem estar logado -> Vai para a Raiz (/)
   if (path.startsWith('/dashboard') && !user) {
     return NextResponse.redirect(new URL('/', request.url))
+  }
+
+  // Se estiver logado e tentar ir para a Raiz -> Vai para o Dashboard
+  if (path === '/' && user) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return response
