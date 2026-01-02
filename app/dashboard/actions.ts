@@ -37,7 +37,7 @@ export async function createOrder(formData: FormData) {
     // 2. Cria Pedido (Cabeçalho)
     const orderData = {
       user_id: user.id,
-      status: 'pendente',
+      status: 'em analise',
       observacoes: formData.get('observacoes') as string,
     }
 
