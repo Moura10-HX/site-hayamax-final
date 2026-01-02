@@ -3,6 +3,23 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+
+  // --- CORREÇÃO DE ROTA 404 ---
+  // Redireciona permanentemente qualquer acesso a /login ou /acesso para a raiz
+  async redirects() {
+    return [
+      {
+        source: '/login',
+        destination: '/',
+        permanent: true, // Avisa o navegador/cache que a mudança é definitiva
+      },
+      {
+        source: '/acesso',
+        destination: '/',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
@@ -28,17 +45,10 @@ export default withSentryConfig(nextConfig, {
   // side errors will fail.
   tunnelRoute: "/monitoring",
 
-  webpack: {
-    // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-    // See the following for more information:
-    // https://docs.sentry.io/product/crons/
-    // https://vercel.com/docs/cron-jobs
-    automaticVercelMonitors: true,
-
-    // Tree-shaking options for reducing bundle size
-    treeshake: {
-      // Automatically tree-shake Sentry logger statements to reduce bundle size
-      removeDebugLogging: true,
-    },
-  }
-});
+  // Removido o bloco 'webpack' incorreto que estava dentro do segundo argumento do withSentryConfig.
+  // As opções automáticas do Sentry já lidam com isso.
+  // Se precisar de config específica do webpack, ela deve ir dentro do nextConfig, não aqui.
+  
+  // Habilita monitoramento automático de Cron Jobs da Vercel
+  automaticVercelMonitors: true,
+})
