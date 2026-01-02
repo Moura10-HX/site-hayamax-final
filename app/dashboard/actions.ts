@@ -82,7 +82,7 @@ export async function getDashboardData() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
-  if (!user) return { profile: null, orders: [] }
+  if (!user) return null // Retorna null se não tiver user, para o page.tsx redirecionar
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -101,4 +101,11 @@ export async function getDashboardData() {
     profile: profile || null,
     orders: orders || []
   }
+}
+
+// --- NOVA FUNÇÃO ADICIONADA: SAIR DO SISTEMA ---
+export async function signOutAction() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  redirect('/') // Redireciona para a raiz (Login)
 }

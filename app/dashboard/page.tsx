@@ -1,4 +1,4 @@
-import { getDashboardData } from './actions'
+import { getDashboardData, signOutAction } from './actions' // <--- ADICIONADO signOutAction
 import { redirect } from 'next/navigation'
 import Link from "next/link"
 import { 
@@ -45,7 +45,7 @@ export default async function DashboardPage() {
 
         <div className="p-4 border-t border-slate-800">
           {/* BOTÃO SAIR CORRIGIDO */}
-          <form action="/auth/signout" method="post">
+          <form action={signOutAction}>
             <button 
               type="submit"
               className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10 cursor-pointer"
