@@ -28,29 +28,28 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
-  // --- REGRAS DE OURO (LÓGICA BLINDADA) ---
+  // --- REGRAS DE OURO (LÓGICA BLINDADA E CORRIGIDA) ---
 
-  // REGRA 1: A Home Page ("/") é SEMPRE pública. Ponto final.
+  // REGRA 1: Gerenciamento da Home/Login ("/")
+  // Se o usuário acessar a raiz...
   if (path === '/') {
-    return response
-  }
-
-  // REGRA 2: A página de Login ("/acesso") é pública.
-  // Mas se o usuário JÁ estiver logado, mandamos ele pro Dashboard (melhor experiência)
-  if (path === '/acesso') {
+    // ...e JÁ estiver logado, mandamos direto para o Dashboard (Melhor experiência)
     if (user) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
+    // ...se NÃO estiver logado, deixa ele ver a tela de login (que é a home)
     return response
   }
 
-  // REGRA 3: Proteção do Dashboard
-  // Se tentar entrar em qualquer coisa que comece com /dashboard SEM estar logado -> Login
+  // REGRA 2: Proteção do Dashboard
+  // Se tentar entrar em qualquer coisa que comece com /dashboard SEM estar logado...
   if (path.startsWith('/dashboard') && !user) {
-    return NextResponse.redirect(new URL('/acesso', request.url))
+    // ...Redireciona para a RAÍZ ("/") que é a tela de login agora.
+    // (Antes estava redirecionando para /acesso, o que causava o erro 404)
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // Deixa passar qualquer outra coisa (imagens, api, etc)
+  // Deixa passar qualquer outra coisa (imagens, api, arquivos estáticos)
   return response
 }
 

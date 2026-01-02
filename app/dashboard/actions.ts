@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 
-// Função simples para converter números
+// --- Funções Auxiliares ---
 function safeFloat(value: FormDataEntryValue | null) {
   if (!value) return 0
   const str = value.toString().replace(',', '.')
@@ -17,6 +17,7 @@ function safeInt(value: FormDataEntryValue | null) {
   return isNaN(parsed) ? 0 : parsed
 }
 
+// --- Criar Pedido ---
 export async function createOrder(formData: FormData) {
   const supabase = await createClient()
 
@@ -77,7 +78,7 @@ export async function createOrder(formData: FormData) {
   redirect('/dashboard')
 }
 
-// Função para carregar o Dashboard (Necessária para não quebrar a página principal)
+// --- Buscar Dados do Dashboard ---
 export async function getDashboardData() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -103,7 +104,7 @@ export async function getDashboardData() {
   }
 }
 
-// --- NOVA FUNÇÃO ADICIONADA: SAIR DO SISTEMA ---
+// --- SAIR DO SISTEMA (Logout) ---
 export async function signOutAction() {
   const supabase = await createClient()
   await supabase.auth.signOut()
