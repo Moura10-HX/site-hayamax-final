@@ -2,19 +2,43 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* 
-     REMOVIDO REDIRECTS TEMPORARIAMENTE
-     Para evitar conflito de "Too many redirects" ou Loop com o Middleware.
-     A prioridade agora é o site subir.
-  */
+  // --- SEGURANÇA CIBERNÉTICA (HARDENING) ---
+
+  // 1. Ocultação de Tecnologia (Security through Obscurity)
+  // Remove o header 'X-Powered-By: Next.js'.
+  // Motivo: Dificulta a fase de reconhecimento (Reconnaissance) de atacantes
+  // que buscam versões específicas do framework com vulnerabilidades conhecidas.
+  poweredByHeader: false,
+
+  // 2. Estabilidade e Qualidade de Código
+  // Força boas práticas do React, evitando memory leaks e componentes instáveis
+  // que poderiam ser explorados para causar travamentos (DoS).
+  reactStrictMode: true,
+
+  // 3. Proteção de Ativos (Images)
+  // Restringe de onde seu servidor aceita processar imagens.
+  // Isso evita que atacantes usem seu servidor como proxy para redimensionar
+  // imagens maliciosas ou pesadas (Ataque de Negação de Serviço / DoS).
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.supabase.co', // Permite apenas seu bucket do Supabase
+      },
+      // Adicione outros domínios confiáveis aqui se necessário
+    ],
+    // Bloqueia injeção de scripts maliciosos via arquivos SVG (XSS)
+    dangerouslyAllowSVG: false,
+    contentDispositionType: 'attachment',
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+  },
 };
 
 export default withSentryConfig(nextConfig, {
-  // For all available options, see:
+  // --- CONFIGURAÇÃO DO SENTRY (MANTIDA INTACTA) ---
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
   org: "opticom-42",
-
   project: "hayamax-backend-app",
 
   // Only print logs for uploading source maps in CI
