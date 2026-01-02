@@ -44,15 +44,15 @@ export default async function DashboardPage() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <form action={async () => {
-            'use server'
-            // Aqui precisaria de uma Server Action de logout, 
-            // mas por enquanto deixamos um link simples ou botão client
-          }}>
-            <Link href="/login" className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10">
+          {/* BOTÃO SAIR CORRIGIDO */}
+          <form action="/auth/signout" method="post">
+            <button 
+              type="submit"
+              className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10 cursor-pointer"
+            >
               <LogOut size={20} />
               <span>Sair do Sistema</span>
-            </Link>
+            </button>
           </form>
         </div>
       </aside>
@@ -205,14 +205,14 @@ function StatusBadge({ status }: { status: string }) {
     "analise": "bg-amber-900/30 text-amber-400 border-amber-800",
     "entregue": "bg-green-900/30 text-green-400 border-green-800",
     "cancelado": "bg-red-900/30 text-red-400 border-red-800",
+    "pendente": "bg-yellow-900/30 text-yellow-400 border-yellow-800", // Adicionei pendente
   }
   
-  // Normaliza o status (ex: "Em Produção" -> "producao" se necessário, mas aqui assumo que vem do banco)
-  const statusKey = status.toLowerCase()
+  const statusKey = status?.toLowerCase() || 'rascunho'
   
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${styles[statusKey] || "bg-slate-800 text-slate-400"}`}>
-      {status.toUpperCase()}
+      {status?.toUpperCase() || 'DESCONHECIDO'}
     </span>
   )
 }
