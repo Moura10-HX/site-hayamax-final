@@ -2,9 +2,9 @@
 
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { createOrder } from '../actions'
-import { createBrowserClient } from '@supabase/ssr' // Import necessário para upload
+// import Link from 'next/link' // Removido pois vamos usar router.push para voltar
+import { createOrder } from '@/app/dashboard/actions' // <--- CAMINHO CORRIGIDO (ALIAS @)
+import { createBrowserClient } from '@supabase/ssr'
 
 // --- TIPAGEM ---
 type Produto = {
@@ -216,7 +216,16 @@ function OrderContent() {
         dataToSend.append('arquivos_urls', JSON.stringify(fileUrls))
       }
 
-      await createOrder(dataToSend)
+      // 3. Chama a Action e espera a resposta
+      const result = await createOrder(dataToSend) as any
+
+      // 4. Verifica o resultado e redireciona manualmente
+      if (result?.success) {
+        alert('Pedido criado com sucesso!')
+        router.push('/dashboard') // <--- REDIRECT FEITO PELO NAVEGADOR
+      } else {
+        throw new Error(result?.message || 'Erro ao processar pedido')
+      }
       
     } catch (error: any) {
       console.error(error)
@@ -234,12 +243,20 @@ function OrderContent() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Link href="/dashboard" className="text-slate-400 hover:text-cyan-600 transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-              </Link>
+              {/* BOTÃO VOLTAR CORRIGIDO */}
+              <button 
+                onClick={() => router.push('/dashboard')} 
+                className="text-slate-400 hover:text-cyan-600 transition-colors p-1 rounded-full hover:bg-slate-100 mr-2"
+                title="Voltar para o Dashboard"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              
               {step === 1 ? (categoria === 'surfacada' ? 'Catálogo Digital' : 'Estoque Pronta Entrega') : 'Novo Pedido'}
             </h1>
-            <p className="text-xs text-slate-500 ml-7">
+            <p className="text-xs text-slate-500 ml-9">
               {step === 1 ? 'Selecione o produto' : step === 2 ? 'Personalização' : 'Dados Técnicos'}
             </p>
           </div>
