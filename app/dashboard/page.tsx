@@ -1,220 +1,485 @@
-import { getDashboardData, signOutAction } from './actions'
-import { redirect } from 'next/navigation'
-import Link from "next/link"
-import { 
-  LayoutDashboard, 
-  PlusCircle, 
-  FileText, 
-  User, 
-  Settings,
-  LogOut,
-  ChevronRight
-} from "lucide-react"
+'use client'
 
-// Componente Principal (Server Component)
-export default async function DashboardPage() {
-  // 1. Busca dados reais no servidor
-  const data = await getDashboardData()
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { createOrder } from '@/app/dashboard/actions'
+import { createBrowserClient } from '@supabase/ssr' // Import necessário para upload
 
-  // 2. Se não tiver dados (não logado), redireciona
-  if (!data) {
-    // CORREÇÃO CRÍTICA AQUI:
-    // Mudamos de '/login' (que não existe) para '/' (que é a sua tela de login real)
-    redirect('/') 
+// --- TIPAGEM ---
+type Produto = {
+  id: string
+  grupo: string
+  nome: string
+  desc: string
+  icon: string
+  tipo_tecnico: string
+  preco: number
+}
+
+// --- DADOS DO CATÁLOGO ---
+const CATALOGO: Record<string, Produto[]> = {
+  surfacada: [
+    { id: 'multi_hd', grupo: 'Multifocais Digitais', nome: 'Hayamax Multifocal HD', desc: 'Campo ampliado com tecnologia Freeform.', icon: '💎', tipo_tecnico: 'multifocal', preco: 250 },
+    { id: 'multi_comfort', grupo: 'Multifocais Digitais', nome: 'Hayamax Comfort', desc: 'Adaptação suave para o dia a dia.', icon: '✨', tipo_tecnico: 'multifocal', preco: 180 },
+    { id: 'vs_digital', grupo: 'Visão Simples', nome: 'VS Digital Surfaçada', desc: 'Alta precisão para miopias complexas.', icon: '🎯', tipo_tecnico: 'visao_simples', preco: 120 },
+    { id: 'office_work', grupo: 'Ocupacionais', nome: 'Hayamax Office', desc: 'Foco em computador e leitura.', icon: '💼', tipo_tecnico: 'ocupacional', preco: 200 },
+    { id: 'bifocal', grupo: 'Ocupacionais', nome: 'Bifocal Digital', desc: 'O clássico reinventado digitalmente.', icon: '👓', tipo_tecnico: 'bifocal', preco: 150 }
+  ],
+  pronta: [
+    { id: 'vs_pronta_ar', grupo: 'Visão Simples (Estoque)', nome: 'VS Antirreflexo', desc: 'Entrega imediata 1.56.', icon: '📦', tipo_tecnico: 'visao_simples', preco: 50 },
+    { id: 'vs_pronta_blue', grupo: 'Visão Simples (Estoque)', nome: 'VS Blue Cut', desc: 'Proteção contra luz azul.', icon: '🛡️', tipo_tecnico: 'visao_simples', preco: 70 },
+    { id: 'vs_solar', grupo: 'Solar Graduado', nome: 'VS Solar Pronta', desc: 'Proteção UV400 Cinza/Marrom.', icon: '☀️', tipo_tecnico: 'visao_simples', preco: 90 }
+  ]
+}
+
+const MATERIAIS = [
+  { id: 'resina', nome: 'Resina 1.50', desc: 'Standard' },
+  { id: 'policarbonato', nome: 'Policarbonato', desc: 'Resistente' },
+  { id: 'trivex', nome: 'Trivex', desc: 'Premium' },
+  { id: 'indice_167', nome: 'Alto Índice 1.67', desc: 'Fina' }
+]
+
+const TRATAMENTOS = [
+  { id: 'sem_tratamento', nome: 'Sem Tratamento', custo: 0 },
+  { id: 'antirreflexo', nome: 'Antirreflexo Premium', custo: 80 },
+  { id: 'blue_cut', nome: 'Blue Cut', custo: 150 },
+  { id: 'photosensivel', nome: 'Fotossensível', custo: 200 }
+]
+
+const formatMoney = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+
+function OrderContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  const paramCategoria = searchParams.get('categoria')
+  const categoria = (paramCategoria && CATALOGO[paramCategoria]) ? paramCategoria : 'surfacada'
+  
+  const produtosList = CATALOGO[categoria]
+  const produtosAgrupados = produtosList.reduce((acc, prod) => {
+    if (!acc[prod.grupo]) acc[prod.grupo] = []
+    acc[prod.grupo].push(prod)
+    return acc
+  }, {} as Record<string, Produto[]>)
+  
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [selection, setSelection] = useState<{ produto: Produto | null, material: any, tratamento: any }>({ produto: null, material: null, tratamento: null })
+  
+  // --- NOVO ESTADO PARA ARQUIVOS ---
+  const [files, setFiles] = useState<File[]>([])
+
+  const [formData, setFormData] = useState({
+    codigo_os: '', paciente_nome: '', cor: 'incolor',
+    od_esferico: '', od_cilindrico: '', od_eixo: '', od_dnp: '', od_altura: '',
+    oe_esferico: '', oe_cilindrico: '', oe_eixo: '', oe_dnp: '', oe_altura: '',
+    adicao: ''
+  })
+
+  const selectProduct = (prod: Produto) => { setSelection({ ...selection, produto: prod }); setStep(2) }
+  
+  const selectOptions = (mat: any, trat: any) => { 
+    if(!mat) return alert("Por favor, selecione um material.")
+    setSelection({ ...selection, material: mat, tratamento: trat || TRATAMENTOS[0] })
+    setStep(3) 
+  }
+  
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  const { profile, orders } = data
+  // --- FUNÇÃO PARA GERENCIAR ARQUIVOS ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files)
+      setFiles(prev => [...prev, ...newFiles])
+    }
+  }
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // --- FUNÇÃO DE UPLOAD PARA O SUPABASE ---
+  const uploadFilesToStorage = async () => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    const uploadedUrls: string[] = []
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      // Nome único para evitar sobrescrita
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `pedidos/${fileName}`
+
+      const { error } = await supabase.storage
+        .from('anexos') // Certifique-se que o bucket se chama 'anexos'
+        .upload(filePath, file)
+
+      if (error) throw new Error(`Erro ao enviar ${file.name}: ${error.message}`)
+
+      const { data } = supabase.storage
+        .from('anexos')
+        .getPublicUrl(filePath)
+
+      uploadedUrls.push(data.publicUrl)
+    }
+
+    return uploadedUrls
+  }
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    if (!value) return
+
+    let valorNumerico = parseFloat(value.replace(',', '.'))
+    if (isNaN(valorNumerico)) return
+
+    if (name.includes('eixo')) {
+      if (valorNumerico < 0) valorNumerico = 0
+      if (valorNumerico > 180) valorNumerico = 180
+      setFormData(prev => ({ ...prev, [name]: Math.round(valorNumerico).toString() }))
+      return
+    }
+
+    if (name.includes('esferico') || name.includes('cilindrico') || name.includes('adicao')) {
+      valorNumerico = Math.round(valorNumerico * 4) / 4
+
+      if (name.includes('cilindrico')) {
+        valorNumerico = -Math.abs(valorNumerico)
+      }
+
+      if (name.includes('adicao')) {
+        valorNumerico = Math.abs(valorNumerico)
+        setFormData(prev => ({ ...prev, [name]: `+${valorNumerico.toFixed(2)}` }))
+        return
+      }
+
+      setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(2) }))
+    }
+
+    if (name.includes('dnp') || name.includes('altura')) {
+      setFormData(prev => ({ ...prev, [name]: valorNumerico.toFixed(1) }))
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const form = e.currentTarget.form
+      if (!form) return
       
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col hidden md:flex">
-        <div className="p-6 border-b border-slate-800">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-            Hayamax Digital
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">Painel do Parceiro</p>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-2">
-          <NavItem icon={<LayoutDashboard />} label="Visão Geral" active />
-          <NavItem icon={<PlusCircle />} label="Novo Pedido" />
-          <NavItem icon={<FileText />} label="Meus Pedidos" />
-          <NavItem icon={<User />} label="Clientes/Pacientes" />
-          <NavItem icon={<Settings />} label="Configurações" />
-        </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          {/* BOTÃO SAIR VIA SERVER ACTION */}
-          <form action={signOutAction}>
-            <button 
-              type="submit"
-              className="flex items-center gap-3 text-slate-400 hover:text-red-400 transition-colors w-full p-2 rounded-lg hover:bg-red-900/10 cursor-pointer"
-            >
-              <LogOut size={20} />
-              <span>Sair do Sistema</span>
-            </button>
-          </form>
-        </div>
-      </aside>
-
-      {/* CONTEÚDO PRINCIPAL */}
-      <main className="flex-1 flex flex-col">
-        
-        {/* HEADER */}
-        <header className="h-16 bg-slate-900/50 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 sticky top-0 z-10">
-          <div className="flex items-center gap-4 text-slate-400">
-            <span className="md:hidden font-bold text-white">Hayamax</span>
-            <div className="hidden md:flex items-center gap-2 text-sm">
-              <span>Dashboard</span>
-              <ChevronRight size={14} />
-              <span className="text-white">Visão Geral</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-xs font-bold shadow-lg shadow-blue-900/50 text-white">
-              {profile?.razao_social?.charAt(0).toUpperCase() || 'H'}
-            </div>
-          </div>
-        </header>
-
-        {/* ÁREA DE CONTEÚDO */}
-        <div className="p-6 md:p-8 overflow-y-auto">
-          
-          <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                Olá, {profile?.razao_social || 'Parceiro'} 👋
-              </h2>
-              <p className="text-slate-400">Bem-vindo ao seu painel de controle.</p>
-            </div>
-            <Link href="/dashboard/novo-pedido">
-              <button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl font-medium shadow-lg shadow-blue-900/20 transition-all flex items-center gap-2">
-                <PlusCircle size={18} />
-                Nova Ordem de Serviço
-              </button>
-            </Link>
-          </div>
-
-          {/* CARDS COM DADOS REAIS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatCard 
-              title="Limite de Crédito" 
-              value={`R$ ${profile?.limite_credito?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`} 
-              icon="💳" 
-              color="text-blue-400" 
-              border="border-blue-900/50" 
-            />
-            <StatCard 
-              title="Pedidos Ativos" 
-              value={orders.filter(o => o.status !== 'entregue' && o.status !== 'cancelado').length.toString()} 
-              icon="⚙️" 
-              color="text-amber-400" 
-              border="border-amber-900/50" 
-            />
-            <StatCard 
-              title="Status da Conta" 
-              value="Ativo" 
-              icon="✅" 
-              color="text-green-400" 
-              border="border-green-900/50" 
-            />
-          </div>
-
-          {/* TABELA COM DADOS REAIS */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-bold text-lg">Pedidos Recentes</h3>
-              <button className="text-sm text-blue-400 hover:text-blue-300">Ver todos</button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950 text-slate-400 uppercase text-xs">
-                  <tr>
-                    <th className="px-6 py-4 font-medium">ID</th>
-                    <th className="px-6 py-4 font-medium">Data</th>
-                    <th className="px-6 py-4 font-medium">Status</th>
-                    <th className="px-6 py-4 font-medium text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {orders.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-slate-500">
-                        Nenhum pedido encontrado. Crie sua primeira OS!
-                      </td>
-                    </tr>
-                  ) : (
-                    orders.map((order) => (
-                      <tr key={order.id} className="hover:bg-slate-800/50 transition-colors">
-                        <td className="px-6 py-4 font-mono text-slate-300 text-xs">
-                          {order.id.slice(0, 8)}...
-                        </td>
-                        <td className="px-6 py-4 text-slate-400">
-                          {new Date(order.created_at).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={order.status} />
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <Link href={`/dashboard/pedido/${order.id}`} className="text-blue-400 hover:text-blue-300 text-xs font-medium">
-                            Detalhes
-                          </Link>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      </main>
-    </div>
-  )
-}
-
-// --- COMPONENTES VISUAIS (Mantidos iguais) ---
-
-function NavItem({ icon, label, active = false }: any) {
-  return (
-    <div className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all cursor-pointer ${active ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
-      {icon}
-      <span className="font-medium text-sm">{label}</span>
-    </div>
-  )
-}
-
-function StatCard({ title, value, icon, color, border }: any) {
-  return (
-    <div className={`bg-slate-900 p-6 rounded-2xl border ${border} relative overflow-hidden group hover:border-slate-600 transition-all`}>
-      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-4xl grayscale group-hover:grayscale-0">
-        {icon}
-      </div>
-      <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
-      <h3 className={`text-2xl font-bold ${color}`}>{value}</h3>
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: any = {
-    "producao": "bg-blue-900/30 text-blue-400 border-blue-800",
-    "rascunho": "bg-slate-800 text-slate-400 border-slate-700",
-    "analise": "bg-amber-900/30 text-amber-400 border-amber-800",
-    "entregue": "bg-green-900/30 text-green-400 border-green-800",
-    "cancelado": "bg-red-900/30 text-red-400 border-red-800",
-    "pendente": "bg-yellow-900/30 text-yellow-400 border-yellow-800",
+      const index = Array.prototype.indexOf.call(form, e.currentTarget)
+      const nextElement = form.elements[index + 1] as HTMLElement
+      
+      if (nextElement) {
+        nextElement.focus()
+      }
+    }
   }
-  
-  const statusKey = status?.toLowerCase() || 'rascunho'
-  
+
+  const handleSubmit = async () => {
+    if (!formData.paciente_nome || !formData.codigo_os) return alert('Preencha a OS e o Nome do Cliente.')
+    if (!selection.produto || !selection.material) return alert('Erro na seleção do produto.')
+
+    setLoading(true)
+    try {
+      // 1. Upload dos Arquivos (Se houver)
+      let fileUrls: string[] = []
+      if (files.length > 0) {
+        fileUrls = await uploadFilesToStorage()
+      }
+
+      const dataToSend = new FormData()
+      
+      dataToSend.append('observacoes', `OS: ${formData.codigo_os} | Produto: ${selection.produto.nome} | Material: ${selection.material.nome}`)
+      dataToSend.append('nome_paciente', formData.paciente_nome)
+      dataToSend.append('tipo_lente', selection.produto.tipo_tecnico)
+      dataToSend.append('tratamento', selection.tratamento?.nome || 'Sem tratamento')
+      
+      dataToSend.append('od_esferico', formData.od_esferico)
+      dataToSend.append('od_cilindrico', formData.od_cilindrico)
+      dataToSend.append('od_eixo', formData.od_eixo)
+      dataToSend.append('od_dnp', formData.od_dnp)
+      
+      dataToSend.append('oe_esferico', formData.oe_esferico)
+      dataToSend.append('oe_cilindrico', formData.oe_cilindrico)
+      dataToSend.append('oe_eixo', formData.oe_eixo)
+      dataToSend.append('oe_dnp', formData.oe_dnp)
+
+      // 2. Anexa as URLs dos arquivos como JSON String
+      if (fileUrls.length > 0) {
+        dataToSend.append('arquivos_urls', JSON.stringify(fileUrls))
+      }
+
+      // 3. Chama a Action e espera a resposta
+      const result = await createOrder(dataToSend) as any
+
+      // 4. Verifica o resultado
+      if (result?.success) {
+        alert('Pedido criado com sucesso!')
+        router.push('/dashboard') // <--- REDIRECT FEITO PELO NAVEGADOR
+      } else {
+        throw new Error(result?.message || 'Erro ao processar pedido')
+      }
+      
+    } catch (error: any) {
+      console.error(error)
+      alert(`Erro ao criar pedido: ${error.message || 'Erro desconhecido'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${styles[statusKey] || "bg-slate-800 text-slate-400"}`}>
-      {status?.toUpperCase() || 'DESCONHECIDO'}
-    </span>
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-24">
+      
+      {/* HEADER FIXO */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Link href="/dashboard" className="text-slate-400 hover:text-cyan-600 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              </Link>
+              {step === 1 ? (categoria === 'surfacada' ? 'Catálogo Digital' : 'Estoque Pronta Entrega') : 'Novo Pedido'}
+            </h1>
+            <p className="text-xs text-slate-500 ml-7">
+              {step === 1 ? 'Selecione o produto' : step === 2 ? 'Personalização' : 'Dados Técnicos'}
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className={`w-2 h-2 rounded-full transition-all ${step >= i ? 'bg-cyan-600 scale-110' : 'bg-slate-200'}`} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-6 mt-8">
+
+        {/* --- PASSO 1: VITRINE --- */}
+        {step === 1 && (
+          <div className="animate-fade-in space-y-10">
+            {Object.entries(produtosAgrupados).map(([grupo, produtos]) => (
+              <div key={grupo}>
+                <div className="flex items-center gap-4 mb-6">
+                  <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{grupo}</h2>
+                  <div className="h-px bg-slate-200 w-full"></div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {produtos.map((prod) => (
+                    <button 
+                      key={prod.id} 
+                      onClick={() => selectProduct(prod)} 
+                      className="group bg-white border border-slate-200 hover:border-cyan-500 rounded-xl p-6 text-left transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col h-full relative overflow-hidden"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center text-2xl group-hover:bg-cyan-50 group-hover:text-cyan-600 transition-colors">
+                          {prod.icon}
+                        </div>
+                        <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-cyan-100 group-hover:text-cyan-700">
+                          {formatMoney(prod.preco)}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-lg mb-2 group-hover:text-cyan-700 transition-colors">{prod.nome}</h3>
+                      <p className="text-sm text-slate-500 mb-6 leading-relaxed flex-1">{prod.desc}</p>
+                      <div className="w-full py-2.5 text-center text-sm font-bold text-cyan-600 border border-cyan-100 rounded-lg bg-cyan-50 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
+                        Configurar Lente
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* --- PASSO 2: CONFIGURAÇÃO --- */}
+        {step === 2 && selection.produto && (
+          <div className="animate-fade-in max-w-4xl mx-auto">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 mb-8 flex items-center gap-6 shadow-sm">
+              <div className="text-4xl p-4 bg-slate-50 rounded-lg">{selection.produto.icon}</div>
+              <div>
+                <h2 className="font-bold text-slate-800 text-2xl">{selection.produto.nome}</h2>
+                <p className="text-slate-500">{selection.produto.desc}</p>
+              </div>
+              <button onClick={() => setStep(1)} className="ml-auto text-sm text-cyan-600 hover:text-cyan-700 font-bold hover:underline">
+                Alterar Produto
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2">
+                  <span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> Material
+                </h3>
+                <div className="space-y-2">
+                  {MATERIAIS.map(mat => (
+                    <button key={mat.id} onClick={() => setSelection({...selection, material: mat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.material?.id === mat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>
+                      {mat.nome}
+                      {selection.material?.id === mat.id && <span className="text-cyan-600">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-slate-700 mb-4 border-b pb-3 flex items-center gap-2">
+                  <span className="bg-slate-800 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Tratamento
+                </h3>
+                <div className="space-y-2">
+                  {TRATAMENTOS.map(trat => (
+                    <button key={trat.id} onClick={() => setSelection({...selection, tratamento: trat})} className={`w-full p-3.5 rounded-lg border text-left flex justify-between items-center transition-all ${selection.tratamento?.id === trat.id ? 'bg-cyan-50 border-cyan-500 text-cyan-700 font-bold shadow-sm ring-1 ring-cyan-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>
+                      <span>{trat.nome}</span>
+                      {trat.custo > 0 && <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-normal border border-slate-200">+ {formatMoney(trat.custo)}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-8">
+              <button onClick={() => selectOptions(selection.material, selection.tratamento)} disabled={!selection.material} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 px-12 rounded-lg shadow-lg shadow-cyan-600/20 disabled:opacity-50 disabled:shadow-none transition-all transform hover:-translate-y-0.5">
+                Avançar para Medidas →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* --- PASSO 3: DADOS TÉCNICOS --- */}
+        {step === 3 && selection.produto && (
+          <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div className="lg:col-span-2 space-y-6">
+              <form className="contents"> {/* Form wrapper para o Enter funcionar */}
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Identificação</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Número da OS</label>
+                      <input name="codigo_os" onChange={handleChange} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded-lg p-3 text-slate-800 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono" placeholder="Ex: 12345" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1.5 block uppercase">Nome do Cliente</label>
+                      <input name="paciente_nome" onChange={handleChange} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded-lg p-3 text-slate-800 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all" placeholder="Nome Completo" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Grade de Dioptrias</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-center border-collapse">
+                      <thead>
+                        <tr>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 rounded-l-lg">Olho</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Esférico</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Cilíndrico</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50">Eixo</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 border-l border-slate-200">DNP</th>
+                          <th className="p-2 text-xs font-bold text-slate-500 uppercase bg-slate-50 rounded-r-lg">Altura</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        <tr>
+                          <td className="py-4 font-bold text-cyan-600">OD</td>
+                          <td className="p-1"><input name="od_esferico" value={formData.od_esferico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
+                          <td className="p-1"><input name="od_cilindrico" value={formData.od_cilindrico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
+                          <td className="p-1"><input name="od_eixo" value={formData.od_eixo} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0" /></td>
+                          <td className="p-1 border-l border-slate-100"><input name="od_dnp" value={formData.od_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                          <td className="p-1"><input name="od_altura" value={formData.od_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                        </tr>
+                        <tr>
+                          <td className="py-4 font-bold text-slate-600">OE</td>
+                          <td className="p-1"><input name="oe_esferico" value={formData.oe_esferico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
+                          <td className="p-1"><input name="oe_cilindrico" value={formData.oe_cilindrico} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0.00" /></td>
+                          <td className="p-1"><input name="oe_eixo" value={formData.oe_eixo} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none font-mono" placeholder="0" /></td>
+                          <td className="p-1 border-l border-slate-100"><input name="oe_dnp" value={formData.oe_dnp} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                          <td className="p-1"><input name="oe_altura" value={formData.oe_altura} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full border border-slate-300 rounded p-2 text-center text-slate-800 focus:border-cyan-500 outline-none" placeholder="mm" /></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-6 flex justify-center">
+                    <div className="flex items-center gap-3 bg-slate-50 px-6 py-3 rounded-lg border border-slate-200">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Adição</span>
+                      <input name="adicao" value={formData.adicao} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} placeholder="+0.00" className="w-24 bg-transparent text-center font-bold text-lg text-slate-800 outline-none font-mono" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* --- NOVO BLOCO: UPLOAD DE ARQUIVOS --- */}
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                  <h3 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wide border-b pb-2">Anexos (Receita / Fotos)</h3>
+                  <div className="flex flex-col gap-4">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg className="w-8 h-8 mb-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                        <p className="text-sm text-slate-500"><span className="font-semibold">Clique para enviar</span> ou arraste</p>
+                        <p className="text-xs text-slate-400">PNG, JPG ou PDF</p>
+                      </div>
+                      <input type="file" multiple className="hidden" onChange={handleFileChange} />
+                    </label>
+
+                    {files.length > 0 && (
+                      <ul className="space-y-2">
+                        {files.map((file, index) => (
+                          <li key={index} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200 text-sm">
+                            <span className="truncate max-w-[200px] text-slate-600">{file.name}</span>
+                            <button type="button" onClick={() => removeFile(index)} className="text-red-500 hover:text-red-700 font-bold px-2">×</button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+              </form>
+            </div>
+
+            {/* Resumo Lateral */}
+            <div className="lg:col-span-1">
+              <div className="sticky top-24 bg-white border border-slate-200 rounded-xl p-6 shadow-lg">
+                <h2 className="font-bold text-slate-800 mb-4 text-lg border-b pb-3">Resumo do Pedido</h2>
+                <div className="space-y-3 text-sm mb-6">
+                  <div className="flex justify-between"><span className="text-slate-500">Produto</span><span className="text-slate-800 font-bold text-right">{selection.produto.nome}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Material</span><span className="text-slate-800">{selection.material.nome}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Tratamento</span><span className="text-slate-800">{selection.tratamento.nome}</span></div>
+                  {files.length > 0 && (
+                    <div className="flex justify-between"><span className="text-slate-500">Anexos</span><span className="text-slate-800">{files.length} arquivo(s)</span></div>
+                  )}
+                </div>
+                <div className="flex justify-between items-end mb-6 pt-4 border-t border-slate-100">
+                  <span className="text-slate-500 font-bold">Total Estimado</span>
+                  <span className="text-2xl font-bold text-cyan-600">{formatMoney(selection.produto.preco + (selection.tratamento?.custo || 0))}</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <button onClick={handleSubmit} disabled={loading} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 rounded-lg shadow-lg shadow-cyan-600/20 disabled:opacity-50 transition-all">
+                    {loading ? (files.length > 0 ? 'Enviando Arquivos...' : 'Criando Pedido...') : 'Finalizar Pedido'}
+                  </button>
+                  <button onClick={() => setStep(1)} className="w-full py-2 text-slate-500 hover:text-slate-800 text-sm font-medium hover:underline">Voltar e editar</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function NewOrderPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400 font-medium">Carregando catálogo...</div>}>
+      <OrderContent />
+    </Suspense>
   )
 }
